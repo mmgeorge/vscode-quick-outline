@@ -29,7 +29,7 @@ export class QuickOutline {
     const depthPadding = "".padEnd(depth * 4, " ");;
     return {
       label: `${lineNumberFormatted} ${depthPadding} ${this._iconForKind(symbol.kind)} ${symbol.name}`,
-      description: this._textForKind(symbol.kind),
+      description: this._textForSymbol(symbol),
       symbol
     };
   };
@@ -40,6 +40,7 @@ export class QuickOutline {
     private readonly _symbols: SymbolInformation[]) {
 
     this._quickPick.placeholder = "Jump to a symbol";
+    this._quickPick.matchOnDescription = true;
 
     const items = [];
 
@@ -86,7 +87,7 @@ export class QuickOutline {
       if (window.activeTextEditor) {
         window.activeTextEditor.revealRange(symbol.location.range);
 
-        const startOffset = window.activeTextEditor.document.offsetAt(symbol.location.range.start);;
+        const startOffset = window.activeTextEditor.document.offsetAt(symbol.location.range.start);
         const tokenOffset = window.activeTextEditor.document
           .getText(symbol.location.range)
           .indexOf(symbol.name) + startOffset;
@@ -105,7 +106,6 @@ export class QuickOutline {
         window.activeTextEditor.setDecorations(selectionStyle, [tokenRange!]);
       }
     });
-
     this._quickPick.onDidAccept(() => {
       const item = lastItem;
       const symbol = item.symbol;
@@ -113,7 +113,7 @@ export class QuickOutline {
       if (window.activeTextEditor) {
         window.activeTextEditor.revealRange(symbol.location.range);
 
-        const startOffset = window.activeTextEditor.document.offsetAt(symbol.location.range.start);;
+        const startOffset = window.activeTextEditor.document.offsetAt(symbol.location.range.start);
         const tokenOffset = window.activeTextEditor.document
           .getText(symbol.location.range)
           .indexOf(symbol.name) + startOffset;
@@ -184,34 +184,105 @@ export class QuickOutline {
     }
   }
 
-  private _textForKind(kind: SymbolKind) {
-    switch (kind) {
+  private _kindToText(symbol: SymbolInformation): string {
+    switch (symbol.kind) {
       case SymbolKind.Array: return `array`;
       case SymbolKind.Boolean: return `boolean`;
-      case SymbolKind.Constant: return `constant`;
+      case SymbolKind.Struct: return `struct`;
+      case SymbolKind.Interface: return `interface`;
       case SymbolKind.Class: return `class`;
       case SymbolKind.Constructor: return `constructor`;
       case SymbolKind.Enum: return `enum`;
-      case SymbolKind.EnumMember: return `enum member`;
       case SymbolKind.Event: return `event`;
       case SymbolKind.Field: return `field`;
       case SymbolKind.File: return `file`;
-      case SymbolKind.Function: return `function`;
-      case SymbolKind.Interface: return `interface`;
+      case SymbolKind.Method: return "method";
+      case SymbolKind.Function: return "function";
+      case SymbolKind.Constant: return "constant";
+      case SymbolKind.Variable: return "variable";
+      case SymbolKind.EnumMember: return "enum member";
+      case SymbolKind.Property: return "property";
+      case SymbolKind.TypeParameter: return "type parameter";
       case SymbolKind.Key: return `key`;
       case SymbolKind.Module: return `module`;
-      case SymbolKind.Method: return `method`;
       case SymbolKind.Namespace: return `namespace`;
       case SymbolKind.Null: return `null`;
       case SymbolKind.Number: return `number`;
       case SymbolKind.Object: return `object`;
       case SymbolKind.Operator: return `operator`;
       case SymbolKind.Package: return `package`;
-      case SymbolKind.Property: return `property`;
       case SymbolKind.String: return `string`;
+    }
+  }
+
+  private _textForSymbol(symbol: SymbolInformation): string {
+    const kind = symbol.kind;
+
+    if (window.activeTextEditor == undefined) {
+      return "";
+    }
+
+    switch (kind) {
+      case SymbolKind.Array: return `array`;
+      case SymbolKind.Boolean: return `boolean`;
       case SymbolKind.Struct: return `struct`;
-      case SymbolKind.TypeParameter: return `type parameter`;
-      case SymbolKind.Variable: return `variable`;
+      case SymbolKind.Interface: return `interface`;
+      case SymbolKind.Class: return `class`;
+      case SymbolKind.Constructor: return `constructor`;
+      case SymbolKind.Enum: return `enum`;
+      case SymbolKind.Event: return `event`;
+      case SymbolKind.File: return `file`;
+      case SymbolKind.Method: {
+        const start = symbol.location.range.start;
+        const line = window.activeTextEditor.document.lineAt(start.line);
+        const lineText = window.activeTextEditor.document.getText(line.range)
+          .replace(/(.*)(\{)/s, '$1');
+
+        return lineText.trimStart();
+      }
+      case SymbolKind.Function: {
+        const start = symbol.location.range.start;
+        const line = window.activeTextEditor.document.lineAt(start.line);
+        const lineText = window.activeTextEditor.document.getText(line.range)
+          .replace(/(.*)(\{)/s, '$1');
+
+        return lineText.trimStart();
+      }
+      case SymbolKind.Field:
+      case SymbolKind.Constant:
+      case SymbolKind.Variable:
+      case SymbolKind.EnumMember:
+      case SymbolKind.Property:
+      case SymbolKind.TypeParameter: {
+        const startOffset = window.activeTextEditor.document.offsetAt(symbol.location.range.start);
+        const tokenOffset = window.activeTextEditor.document
+          .getText(symbol.location.range)
+          .indexOf(symbol.name) + startOffset;
+
+        const tokenPosition = window.activeTextEditor.document.positionAt(tokenOffset);
+        const tokenRange = window.activeTextEditor.document.getWordRangeAtPosition(tokenPosition);
+        const tokenEnd = tokenRange!.end;
+
+        const start = symbol.location.range.start;
+        const line = window.activeTextEditor.document.lineAt(start.line);
+        const range = new Range(tokenEnd, line.range.end);
+        const lineText = window.activeTextEditor.document.getText(range)
+          .replace(/^[^a-zA-Z0-9]+/, '')
+          .replace(/(.*)(,)/s, '$1')
+          .replace(/(.*)(;)/s, '$1');
+
+        return lineText;
+      }
+
+      case SymbolKind.Key: return `key`;
+      case SymbolKind.Module: return `module`;
+      case SymbolKind.Namespace: return `namespace`;
+      case SymbolKind.Null: return `null`;
+      case SymbolKind.Number: return `number`;
+      case SymbolKind.Object: return ``;
+      case SymbolKind.Operator: return `operator`;
+      case SymbolKind.Package: return `package`;
+      case SymbolKind.String: return `string`;
     }
   }
 
