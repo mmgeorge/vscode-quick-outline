@@ -195,9 +195,20 @@ export class QuickOutline {
         }
       }
     }
-    // Otherwise if we are expanding, jump to the child
-    else if (expanded && item.children.length) {
-      this._activeItem = item.children[0];
+    // Otherwise if we are expanding
+    else if (expanded) {
+      // Jump to the first child
+      if (item.children.length) {
+        this._activeItem = item.children[0];
+      }
+      // If we have no children, instead move to the next item
+      else {
+        const index = this._quickPick.items.indexOf(item);
+        const next = this._quickPick.items[index + 1];
+        if (next) {
+          this._activeItem = next;
+        }
+      }
     }
 
     item.expanded = expanded;
