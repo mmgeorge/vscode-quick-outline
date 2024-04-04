@@ -125,6 +125,10 @@ export function createSymbolFallbackDescription(symbol: SymbolInformation, activ
 
       const tokenPosition = activeTextEditor.document.positionAt(tokenOffset);
       const tokenRange = activeTextEditor.document.getWordRangeAtPosition(tokenPosition);
+
+      if (!tokenRange) {
+        return kindToText(symbol);
+      }
       const tokenEnd = tokenRange!.end;
 
       const start = symbol.location.range.start;
