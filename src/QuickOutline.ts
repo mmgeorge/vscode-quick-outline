@@ -1,6 +1,7 @@
 import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument } from "vscode";
 import { selectionStyle } from "./extension";
 import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
+import { close } from "fs";
 
 export type QuickItem = QuickPickItem & { symbol: SymbolInformation; };
 
@@ -19,13 +20,14 @@ const ignoredTypesIfEmpty = [
 class QuickOutlineItem implements QuickPickItem {
   constructor(
     private _symbol: SymbolInformation,
-    private _depth = 0
+    private _depth = 0,
+    readonly parent: QuickOutlineItem | null = null
   ) {
     const detail = "detail" in this._symbol &&
       typeof this._symbol["detail"] === "string" &&
       this._symbol.detail.length > 0 ? this._symbol.detail : null;
 
-    this.expanded = expandedByDefaultTypes.includes(this._symbol.kind);
+    this.expanded = false;  //expandedByDefaultTypes.includes(this._symbol.kind);
     this.description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
 
     const line = this._symbol.location.range.start.line;
@@ -39,14 +41,17 @@ class QuickOutlineItem implements QuickPickItem {
       // Symbols may not be returned to us sorted
       children.sort((a, b) => a.location.range.start.line - b.location.range.start.line);
 
-      this.children = children.map(child => new QuickOutlineItem(child, this._depth + 1));
+      this.children = children.map(child => new QuickOutlineItem(child, this._depth + 1, this));
     }
   }
+
 
   readonly children: QuickOutlineItem[] = [];
   readonly description: string;
   readonly label: string;
+
   expanded: boolean;
+  picked = false;
 
   get location(): Location {
     return this._symbol.location;
@@ -60,15 +65,23 @@ class QuickOutlineItem implements QuickPickItem {
     return this._symbol.name;
   }
 
+  *allNestedChildren(): IterableIterator<QuickOutlineItem> {
+    for (const child of this.children) {
+      yield child;
+      yield* child.allNestedChildren();
+    }
+  }
+
   getNameRange(document: TextDocument): Range {
     const startOffset = document.offsetAt(this.location.range.start);
     const tokenOffset = document.getText(this.location.range)
       .indexOf(this.name) + startOffset;
     const tokenPosition = document.positionAt(tokenOffset);
-    const tokenRange = document.getWordRangeAtPosition(tokenPosition);
-    const end = new Position(tokenPosition.line, tokenPosition.character + 10);
+    const newPosition = tokenPosition.translate({ characterDelta: 1 });
+    const tokenRange = document.getWordRangeAtPosition(newPosition);
+    const end = new Position(tokenPosition.line, tokenPosition.character + 4);
 
-    return new Range(tokenPosition, end);
+    return tokenRange ?? new Range(tokenPosition, end);
   }
 }
 
@@ -80,44 +93,105 @@ export class QuickOutline {
 
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
-
-    const items = symbols.map(symbol => new QuickOutlineItem(symbol));
-    // Symbols not guarenteed to be sorted
-    items.sort((a, b) => a.lineStart - b.lineStart);
-    this._quickPick.items = this._extractExpandedItems(items);
-
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
     this._quickPick.onDidAccept(() => this._onDidAccept());
-    this._quickPick.onDidChangeSelection((value) => {
-      console.log("select", value);
-    });
-    this._quickPick.onDidChangeValue((value) => {
-      console.log("change value", value);
-    });
 
-    this._quickPick.show();
+    // Initialize items
+    const items = symbols.map(symbol => new QuickOutlineItem(symbol));
+    items.sort((a, b) => a.lineStart - b.lineStart);
+    this._rootItems = items;
+
+    // Set the outliner to a symbol that is closest the current cursor's lined
+    const initialPosition = this._editor.selection.start;
+    const closestItem = this._getClosestItem(initialPosition);
+    this._activeItem = closestItem;
+
+    // Expand any parents along the way so we can see it
+    let parent = closestItem.parent;
+    while (parent != null) {
+      parent.expanded = true;
+      parent = parent.parent;
+    }
+
+    // Finally trigger an update and render the outliner
+    this._updateItems();
   }
 
   destroy() {
     this._quickPick.dispose();
   }
 
-  private _quickPick = window.createQuickPick<QuickOutlineItem>();
-  private _lastItem: QuickOutlineItem | null = null;
   private _editor = window.activeTextEditor!;
+  private _quickPick = window.createQuickPick<QuickOutlineItem>();
+  private _rootItems: QuickOutlineItem[];
+  private _activeItem: QuickOutlineItem | null = null;
+
+  *items(): IterableIterator<QuickOutlineItem> {
+    for (const item of this._rootItems) {
+      yield* item.allNestedChildren();
+    }
+  }
+
+  setActiveItemExpandEnabled(expanded: boolean): void {
+    const item = this._activeItem;
+    if (!item) {
+      return;
+    }
+
+    if (!item.expanded && item.children.length) {
+      item.expanded = expanded;
+      this._updateItems();
+    }
+  }
+
+  private _getClosestItem(position: Position): QuickOutlineItem {
+    let closestItem: QuickOutlineItem | null = null;
+    let closestLineDist = Infinity;
+
+    for (const item of this.items()) {
+      const nameRange = item.getNameRange(this._editor.document);
+      const nameLine = nameRange.start.line;
+      const lineDist = Math.abs(position.line - nameLine);
+
+      if (!closestItem) {
+        closestItem = item;
+        closestLineDist = lineDist;
+        continue;
+      }
+
+      if (lineDist <= closestLineDist) {
+        closestItem = item;
+        closestLineDist = lineDist;
+      }
+    }
+
+    return closestItem!;
+  }
+
+  private _updateItems(): void {
+    this._quickPick.hide();
+    this._quickPick.items = this._extractExpandedItems(this._rootItems);
+
+    if (this._activeItem != null) {
+      this._quickPick.activeItems = [this._activeItem];
+    }
+
+    this._quickPick.show();
+  }
 
   private _onDidChangeActive(items: QuickOutlineItem[]) {
-    let item = items[0];
-    this._lastItem = item;
-
+    const item = items[0];
     const nameRange = item.getNameRange(this._editor.document);
 
     this._editor.revealRange(item.location.range);
     this._editor.setDecorations(selectionStyle, [nameRange]);
+    this._activeItem = item;
+
+    this.setActiveItemExpandEnabled(true);
   }
 
   private _onDidAccept(): void {
-    const item = this._lastItem;
+    const item = this._activeItem;
 
     if (item == null) {
       return;
