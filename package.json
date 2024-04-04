@@ -21,6 +21,30 @@
       {
         "command": "quick-outline.showOutline",
         "title": "Quick Outline: Show Outline"
+      },
+      {
+        "command": "quick-outline.closeOutline",
+        "title": "Quick Outline: Close Outline"
+      },
+      {
+        "command": "quick-outline.expand",
+        "title": "Quick Outline: Expand"
+      },
+      {
+        "command": "quick-outline.collapse",
+        "title": "Quick Outline: Collapse"
+      },
+      {
+        "command": "quick-outline.expandAll",
+        "title": "Quick Outline: Expand All"
+      },
+      {
+        "command": "quick-outline.collapseAll",
+        "title": "Quick Outline: Collapse All"
+      },
+      {
+        "command": "quick-outline.showAllFunctionMethod",
+        "title": "Quick Outline: Show All Function Method"
       }
     ]
   },

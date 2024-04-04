@@ -1,4 +1,4 @@
-import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument } from "vscode";
+import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument, commands } from "vscode";
 import { selectionStyle } from "./extension";
 import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
 import { close } from "fs";
@@ -52,6 +52,11 @@ class QuickOutlineItem implements QuickPickItem {
 
   expanded: boolean;
   picked = false;
+  hidden = false;
+
+  get symbolKind(): SymbolKind {
+    return this._symbol.kind;
+  }
 
   get location(): Location {
     return this._symbol.location;
@@ -86,15 +91,24 @@ class QuickOutlineItem implements QuickPickItem {
 }
 
 
+export function setInQuickOutline(value: boolean) {
+  commands.executeCommand("setContext", "inQuickOutline", value);
+}
+
+
 export class QuickOutline {
 
-  constructor(
-    symbols: SymbolInformation[]) {
+  constructor(symbols: SymbolInformation[]) {
+    setInQuickOutline(true);
 
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
+    this._quickPick.ignoreFocusOut = true;
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
     this._quickPick.onDidAccept(() => this._onDidAccept());
+    this._quickPick.onDidHide(() => {
+      this.dispose();
+    });
 
     // Initialize items
     const items = symbols.map(symbol => new QuickOutlineItem(symbol));
@@ -117,7 +131,10 @@ export class QuickOutline {
     this._updateItems();
   }
 
-  destroy() {
+  dispose() {
+    setInQuickOutline(false);
+
+    this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
   }
 
@@ -128,20 +145,71 @@ export class QuickOutline {
 
   *items(): IterableIterator<QuickOutlineItem> {
     for (const item of this._rootItems) {
+      yield item;
       yield* item.allNestedChildren();
     }
   }
 
+  showAll(kinds: SymbolKind[]): void {
+    for (const item of this.items()) {
+      if (kinds.includes(item.symbolKind)) {
+        let parent = item.parent;
+        while (parent != null) {
+          parent.expanded = true;
+          parent = parent.parent;
+        }
+      }
+    }
+
+    this._updateItems();
+  }
+
+  setAllExpandEnabled(expanded: boolean): void {
+    for (const item of this.items()) {
+      item.expanded = expanded;
+    }
+
+    this._updateItems();
+  }
+
   setActiveItemExpandEnabled(expanded: boolean): void {
-    const item = this._activeItem;
+    let item = this._activeItem;
     if (!item) {
       return;
     }
 
-    if (!item.expanded && item.children.length) {
-      item.expanded = expanded;
-      this._updateItems();
+    // When collapsing, collapse the entire group up to the parent
+    // TODO: Make configurable or as a separate command?
+    if (!expanded) {
+      // Go up
+      if (item.parent != null) {
+        item = item.parent;
+        this._activeItem = item;
+      }
+      else {
+        // No parent? Try to go back to the root previous
+        const index = this._rootItems.indexOf(item);
+        const prev = this._rootItems[index - 1];
+        if (prev) {
+          this._activeItem = prev;
+        }
+      }
     }
+    // Otherwise if we are expanding, jump to the child
+    else if (expanded && item.children.length) {
+      this._activeItem = item.children[0];
+    }
+
+    item.expanded = expanded;
+
+    // If we are collapsing an item, also collapse any children
+    if (!expanded) {
+      for (const child of item.allNestedChildren()) {
+        child.expanded = false;
+      }
+    }
+
+    this._updateItems();
   }
 
   private _getClosestItem(position: Position): QuickOutlineItem {
@@ -169,7 +237,6 @@ export class QuickOutline {
   }
 
   private _updateItems(): void {
-    this._quickPick.hide();
     this._quickPick.items = this._extractExpandedItems(this._rootItems);
 
     if (this._activeItem != null) {
@@ -186,8 +253,6 @@ export class QuickOutline {
     this._editor.revealRange(item.location.range);
     this._editor.setDecorations(selectionStyle, [nameRange]);
     this._activeItem = item;
-
-    this.setActiveItemExpandEnabled(true);
   }
 
   private _onDidAccept(): void {
@@ -203,7 +268,7 @@ export class QuickOutline {
     this._editor.revealRange(item.location.range);
     this._editor.setDecorations(selectionStyle, []);
 
-    this.destroy();
+    this.dispose();
   }
 
   private _extractExpandedItems(items: QuickOutlineItem[], out: QuickOutlineItem[] = []): QuickOutlineItem[] {
