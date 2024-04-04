@@ -104,6 +104,7 @@ export class QuickOutline {
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
     this._quickPick.ignoreFocusOut = true;
+    this._quickPick.keepScrollPosition = true;
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
