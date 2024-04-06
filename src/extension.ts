@@ -1,4 +1,4 @@
-import { commands, window, type ExtensionContext, type TextEditor, type SymbolInformation, type QuickPickItem, SymbolKind } from "vscode";
+import { commands, window, type ExtensionContext, type TextEditor, type SymbolInformation, type QuickPickItem, SymbolKind, workspace } from "vscode";
 import { QuickOutline } from "./QuickOutline";
 
 export const selectionStyle = window.createTextEditorDecorationType({
@@ -19,7 +19,7 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand('quick-outline.showAllFunctionMethod', () => quickOutline?.showAll([SymbolKind.Function, SymbolKind.Method])),
   ];
 
-  context.subscriptions.push(...cmds);
+  console.log(window.tabGroups.all);
 }
 
 export function deactivate() {

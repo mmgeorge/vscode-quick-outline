@@ -1,7 +1,10 @@
-import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument, commands } from "vscode";
+import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument, commands, TextLine } from "vscode";
 import { selectionStyle } from "./extension";
 import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
+
+
 import { close } from "fs";
+import { IMatchedRange, parseSearchString, searchDocument } from "./search";
 
 export type QuickItem = QuickPickItem & { symbol: SymbolInformation; };
 
@@ -17,18 +20,60 @@ const ignoredTypesIfEmpty = [
   SymbolKind.Object
 ];
 
-class QuickOutlineItem implements QuickPickItem {
+type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
+
+let currentSearchString: string = "";
+
+class QuickLineItem implements QuickPickItem {
+
+  constructor(
+    readonly line: TextLine,
+    readonly match: IMatchedRange, 
+    private readonly _depth: number = 0, 
+    readonly parent: QuickSymbolOutlineItem | null
+  ) { 
+    const lineNumberFormatted = pad(line.lineNumber.toString());
+    const depthPadding = "".padEnd(this._depth * 4, " ");;
+
+    this.label = `${lineNumberFormatted} ${depthPadding} ${line.text.trim()}`;
+  }
+
+  readonly ty = "line"; 
+  readonly label: string; 
+
+  picked = false;
+  hidden = false;
+  expanded = false; 
+
+  *allNestedChildren(): IterableIterator<QuickOutlineItem> { }
+
+  clearLineChildren(): void {}
+  
+  get children(): QuickOutlineItem[] {
+    return [];
+  }
+
+  get description(): string {
+    return `[${currentSearchString}]`;
+  }
+
+  insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
+    return false; 
+  }
+}
+
+class QuickSymbolOutlineItem implements QuickPickItem {
   constructor(
     private _symbol: SymbolInformation,
     private _depth = 0,
-    readonly parent: QuickOutlineItem | null = null
+    readonly parent: QuickSymbolOutlineItem | null = null
   ) {
     const detail = "detail" in this._symbol &&
       typeof this._symbol["detail"] === "string" &&
       this._symbol.detail.length > 0 ? this._symbol.detail : null;
 
     this.expanded = false;  //expandedByDefaultTypes.includes(this._symbol.kind);
-    this.description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
+    this._description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
 
     const line = this._symbol.location.range.start.line;
     const lineNumberFormatted = pad(line.toString());
@@ -41,18 +86,27 @@ class QuickOutlineItem implements QuickPickItem {
       // Symbols may not be returned to us sorted
       children.sort((a, b) => a.location.range.start.line - b.location.range.start.line);
 
-      this.children = children.map(child => new QuickOutlineItem(child, this._depth + 1, this));
+      this._children = children.map(child => new QuickSymbolOutlineItem(child, this._depth + 1, this));
     }
   }
 
+  private readonly _description: string;
+  private _children: QuickOutlineItem[] = [];
 
-  readonly children: QuickOutlineItem[] = [];
-  readonly description: string;
+  readonly ty = "symbol"; 
   readonly label: string;
 
   expanded: boolean;
   picked = false;
   hidden = false;
+
+  get children(): QuickOutlineItem[] {
+    return this._children;
+  }
+
+  get description(): string {
+    return `${this._description} [${currentSearchString}]`;
+  }
 
   get symbolKind(): SymbolKind {
     return this._symbol.kind;
@@ -68,6 +122,37 @@ class QuickOutlineItem implements QuickPickItem {
 
   get name(): string {
     return this._symbol.name;
+  }
+
+  // Returns true if inserted
+  insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
+    if (line.lineNumber === this.lineStart) {
+      // The search line refers exactly to this symbol. Clobber
+      this.hidden = false; 
+      return true; 
+    }
+
+    for (const child of this._children) {
+      if (child.insertLineIfParent(match, line)) {
+        this.expanded = true; 
+        this.hidden = false; 
+        return true; 
+      }
+    }
+
+    if (this.location.range.contains(line.range)) {
+      // Ensure sorted?
+      this.expanded = true; 
+      this.hidden = false; 
+      this.children.push(new QuickLineItem(line, match, this._depth + 1, this));
+      return true; 
+    }
+
+    return false; 
+  }
+
+  clearLineChildren(): void {
+    this._children = this._children.filter(child => child.ty !== "line"); 
   }
 
   *allNestedChildren(): IterableIterator<QuickOutlineItem> {
@@ -106,13 +191,14 @@ export class QuickOutline {
     this._quickPick.ignoreFocusOut = true;
     this._quickPick.keepScrollPosition = true;
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
+    this._quickPick.onDidChangeValue((value) => this._search(value));
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
       this.dispose();
     });
 
     // Initialize items
-    const items = symbols.map(symbol => new QuickOutlineItem(symbol));
+    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol));
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
@@ -127,21 +213,76 @@ export class QuickOutline {
       parent.expanded = true;
       parent = parent.parent;
     }
+    console.log("create");
 
     // Finally trigger an update and render the outliner
     this._updateItems();
+
+    this._quickPick.show();
+
   }
 
+  private _disposed = false;
+ 
   dispose() {
+    if (this._disposed) {
+      return; 
+    }
+
+    this._disposed = true; 
+    console.log("dispose");
     setInQuickOutline(false);
 
     this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
+    this._rootItems = []; 
   }
 
-  private _editor = window.activeTextEditor!;
-  private _quickPick = window.createQuickPick<QuickOutlineItem>();
-  private _rootItems: QuickOutlineItem[];
+  private _search(searchStrRaw: string): void {
+    currentSearchString = searchStrRaw; 
+
+    console.log("Searching", searchStrRaw);
+    if (searchStrRaw.length === 0 || searchStrRaw[0] !== "#") {
+      this._quickPick.value = `#${searchStrRaw}`;
+    }
+
+    const searchStr = searchStrRaw.slice(1);
+    if (searchStr === "") {
+      for (const item of this.items()) {
+        item.clearLineChildren();
+        item.expanded = false; 
+        item.hidden = false; 
+      }
+
+      this._updateItems();
+      return; 
+    }
+
+    const parsed = parseSearchString(searchStr); 
+    const searchResults = searchDocument(this._editor.document, parsed); 
+
+    for (const item of this.items()) {
+      // Filter outer any lines we added from a previous search
+      item.clearLineChildren();
+      item.hidden = true; 
+      item.expanded = false; 
+    }
+
+    let foundParent = false; 
+    for (const match of searchResults) {
+      for (const item of this._rootItems) {
+        const line = this._editor.document.lineAt(match.line); 
+
+        item.insertLineIfParent(match, line);
+      }
+    }
+
+    this._updateItems();
+  }
+
+  protected _quickPick = window.createQuickPick<QuickOutlineItem>();
+  protected _editor = window.activeTextEditor!;
+  protected _rootItems: QuickOutlineItem[];
   private _activeItem: QuickOutlineItem | null = null;
 
   *items(): IterableIterator<QuickOutlineItem> {
@@ -153,7 +294,7 @@ export class QuickOutline {
 
   showAll(kinds: SymbolKind[]): void {
     for (const item of this.items()) {
-      if (kinds.includes(item.symbolKind)) {
+      if (item.ty === "symbol" && kinds.includes(item.symbolKind)) {
         let parent = item.parent;
         while (parent != null) {
           parent.expanded = true;
@@ -167,7 +308,9 @@ export class QuickOutline {
 
   setAllExpandEnabled(expanded: boolean): void {
     for (const item of this.items()) {
-      item.expanded = expanded;
+      if (item.ty === "symbol") {
+        item.expanded = expanded;
+      }
     }
 
     this._updateItems();
@@ -222,6 +365,18 @@ export class QuickOutline {
     }
 
     this._updateItems();
+    this._updateActiveItem();
+  }
+
+  private _updateActiveItem(): void {
+    if (!this._activeItem) {
+      return; 
+    }
+
+    this._quickPick.activeItems = [this._activeItem]; 
+    // `show` seems to be required in order for the quickPick to reselect
+    // the correct active item
+    this._quickPick.show();
   }
 
   private _getClosestItem(position: Position): QuickOutlineItem {
@@ -229,9 +384,15 @@ export class QuickOutline {
     let closestLineDist = Infinity;
 
     for (const item of this.items()) {
-      const nameRange = item.getNameRange(this._editor.document);
-      const nameLine = nameRange.start.line;
-      const lineDist = Math.abs(position.line - nameLine);
+      let line = -1; 
+      if (item.ty === "symbol") {
+        const nameRange = item.getNameRange(this._editor.document);
+        line = nameRange.start.line;
+      } else {
+        line = item.line.lineNumber;
+      }
+
+      const lineDist = Math.abs(position.line - line);
 
       if (!closestItem) {
         closestItem = item;
@@ -250,20 +411,32 @@ export class QuickOutline {
 
   private _updateItems(): void {
     this._quickPick.items = this._extractExpandedItems(this._rootItems);
-
-    if (this._activeItem != null) {
-      this._quickPick.activeItems = [this._activeItem];
-    }
-
-    this._quickPick.show();
   }
 
   private _onDidChangeActive(items: QuickOutlineItem[]) {
+    console.log("change active");
     const item = items[0];
-    const nameRange = item.getNameRange(this._editor.document);
 
-    this._editor.revealRange(item.location.range);
-    this._editor.setDecorations(selectionStyle, [nameRange]);
+    if (item.ty === "symbol") {
+      const nameRange = item.getNameRange(this._editor.document);
+
+      this._editor.revealRange(item.location.range);
+      this._editor.setDecorations(selectionStyle, [nameRange]);
+    } else {
+      const ranges = item.match.ranges.map(([start, length]) => {
+        return new Range(
+          new Position(item.line.lineNumber, start), 
+          new Position(item.line.lineNumber, start + length), 
+        );
+      });
+
+      for (const [start, length] of item.match.ranges) {
+        this._editor.setDecorations(selectionStyle, ranges);
+      }
+
+      this._editor.revealRange(item.line.range);
+    }
+
     this._activeItem = item;
   }
 
@@ -274,17 +447,25 @@ export class QuickOutline {
       return;
     }
 
-    const nameRange = item.getNameRange(this._editor.document);
+    let range: Range; 
+    if (item.ty === "symbol") {
+      range = item.getNameRange(this._editor.document);
+    } else {
+      range = item.line.range; 
+    }
 
-    this._editor.selection = new Selection(item.location.range.start, item.location.range.start);
-    this._editor.revealRange(item.location.range);
+    this._editor.selection = new Selection(range.start, range.start);
+    this._editor.revealRange(range);
     this._editor.setDecorations(selectionStyle, []);
-
-    this.dispose();
+    this._quickPick.hide();
   }
 
   private _extractExpandedItems(items: QuickOutlineItem[], out: QuickOutlineItem[] = []): QuickOutlineItem[] {
     for (const item of items) {
+      if (item.hidden) {
+        continue; 
+      }
+
       out.push(item);
 
       if (item.expanded) {
