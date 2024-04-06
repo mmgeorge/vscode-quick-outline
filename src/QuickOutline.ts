@@ -1,4 +1,4 @@
-import { window, type SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument, commands, TextLine } from "vscode";
+import { window, SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, Location, TextDocument, commands, TextLine } from "vscode";
 import { selectionStyle } from "./extension";
 import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
 
@@ -245,8 +245,20 @@ export class QuickOutline {
     if (searchStrRaw.length === 0 || searchStrRaw[0] !== "#") {
       this._quickPick.value = `#${searchStrRaw}`;
     }
+    
+    const regex = /(#\S+)\s+(.+)/;
+    const groups = searchStrRaw.match(regex); 
 
-    const searchStr = searchStrRaw.slice(1);
+    let commandString = ""; 
+    let searchStr: string; 
+    if (!groups) {
+      // Then we have a single str 
+      searchStr = searchStrRaw;
+    } else {
+      searchStr = groups[2];
+      commandString = groups[1]; 
+    }
+    
     if (searchStr === "") {
       for (const item of this.items()) {
         item.clearLineChildren();
@@ -258,9 +270,6 @@ export class QuickOutline {
       return; 
     }
 
-    const parsed = parseSearchString(searchStr); 
-    const searchResults = searchDocument(this._editor.document, parsed); 
-
     for (const item of this.items()) {
       // Filter outer any lines we added from a previous search
       item.clearLineChildren();
@@ -268,12 +277,81 @@ export class QuickOutline {
       item.expanded = false; 
     }
 
-    let foundParent = false; 
-    for (const match of searchResults) {
-      for (const item of this._rootItems) {
-        const line = this._editor.document.lineAt(match.line); 
+    searchStr = searchStr.trim(); 
+    
 
-        item.insertLineIfParent(match, line);
+    if (searchStr === "" || searchStr === "#") {
+      for (const item of this.items()) {
+        item.hidden = false; 
+      }
+      
+      this._updateItems(); 
+      return; 
+    }
+    
+    // Just filter the symbols
+    if (isCommandString(searchStr) || (
+        isCommandString(commandString) && searchStr.length === 0)) {
+      console.log("Command only");
+      const symbolKinds = symbolKindsForCommandString(searchStr); 
+
+      for (const item of this.items()) {
+        if (item.ty === "symbol") {
+          if (symbolKinds.has(item.symbolKind)) {
+              item.hidden = false; 
+              let parent = item.parent; 
+              while (parent != null) {
+                parent.hidden = false;
+                parent.expanded = true; 
+                parent = parent.parent;
+              }
+          }
+        }
+      }
+    }
+
+    // We have only a search
+    else if (!isCommandString(commandString)) {
+      console.log("Search");
+      const parsed = parseSearchString(searchStr.slice(1)); // Discard #
+      const searchResults = searchDocument(this._editor.document, parsed); 
+
+      let foundParent = false; 
+      for (const match of searchResults) {
+        for (const item of this._rootItems) {
+          const line = this._editor.document.lineAt(match.line); 
+          
+          item.insertLineIfParent(match, line);
+        }
+      }
+    }
+
+    // We have a search with a command string
+    else  {
+      console.log("Search with command");
+      const parsed = parseSearchString(searchStr.slice(1)); // Discard #
+      const searchResults = searchDocument(this._editor.document, parsed); 
+
+      const symbolKinds = symbolKindsForCommandString(commandString); 
+      const hitLines = new Set<number>(); 
+      for (const result of searchResults) {
+        hitLines.add(result.line);
+      }
+
+      for (const item of this.items()) {
+        if (item.ty === "symbol") {
+          if (symbolKinds.has(item.symbolKind)) {
+            if (hitLines.has(item.lineStart)) {
+              item.hidden = false; 
+              let parent = item.parent; 
+              while (parent != null) {
+                parent.hidden = false;
+                parent.expanded = true; 
+                parent = parent.parent;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -476,3 +554,52 @@ export class QuickOutline {
     return out;
   }
 }
+
+function isCommandString(maybeCommandString: string): boolean {
+  if (maybeCommandString.length <= 1) {
+    return false; 
+  }
+  const maybeFilterArg = maybeCommandString.slice(1); // Remove #
+  const validFilterArgs = new Set(['f', "c", "o", "e", "t"]);
+
+  for (const character of maybeFilterArg) {
+    if (!validFilterArgs.has(character)) {
+      return false; 
+    }
+  }
+
+  return true; 
+}
+
+
+function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
+  const out = new Set<SymbolKind>(); 
+
+  if (commandString.includes("f")) {
+    out.add(SymbolKind.Method); 
+    out.add(SymbolKind.Function); 
+  }
+
+  if (commandString.includes("c")) {
+    out.add(SymbolKind.Class); 
+    out.add(SymbolKind.Struct);
+    out.add(SymbolKind.Property); 
+  }
+
+  if (commandString.includes("o")) {
+    out.add(SymbolKind.Object); 
+  }
+
+  if (commandString.includes("e")) {
+    out.add(SymbolKind.Enum); 
+    out.add(SymbolKind.EnumMember); 
+  }
+
+  if (commandString.includes("t")) {
+    out.add(SymbolKind.TypeParameter); 
+    out.add(SymbolKind.Interface); 
+  }
+
+  return out;
+}
+
