@@ -43,6 +43,10 @@
         "title": "Quick Outline: Collapse All"
       },
       {
+        "command": "quick-outline.searchTextInFile",
+        "title": "Quick Outline: Search Text In File"
+      },
+      {
         "command": "quick-outline.showAllFunctionMethod",
         "title": "Quick Outline: Show All Function Method"
       }

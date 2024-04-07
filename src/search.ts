@@ -56,11 +56,11 @@ export function parseSearchString(searchStr: string): IParsedSearchString[] {
 		});
 }
 
-export function searchDocument(document: TextDocument, parsed: IParsedSearchString[]) {
+export function searchDocument(document: TextDocument, parsed: IParsedSearchString[]): IMatchedRange[] {
 	const items = [];
 	
   for (let i = 0; i < document.lineCount; i++) {
-		const matches = _searchLine(i, document.lineAt(i).text, parsed);
+		const matches = searchLine(i, document.lineAt(i).text, parsed);
 		if (matches) {
 			items.push(matches);
 		}
@@ -69,7 +69,7 @@ export function searchDocument(document: TextDocument, parsed: IParsedSearchStri
 	return items;
 }
 
-function _searchLine(lineIndex: number, line: string, parsed: IParsedSearchString[]): IMatchedRange | null {
+export function searchLine(lineIndex: number, line: string, parsed: IParsedSearchString[]): IMatchedRange | null {
 	const matchedRange: IMatchedRange = {
 		line: lineIndex,
 		ranges: []

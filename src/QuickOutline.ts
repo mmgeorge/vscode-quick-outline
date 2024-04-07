@@ -4,7 +4,7 @@ import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
 
 
 import { close } from "fs";
-import { IMatchedRange, parseSearchString, searchDocument } from "./search";
+import { IMatchedRange, parseSearchString, searchDocument, searchLine } from "./search";
 
 export type QuickItem = QuickPickItem & { symbol: SymbolInformation; };
 
@@ -22,10 +22,35 @@ const ignoredTypesIfEmpty = [
 
 type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
 
-const cmd = "#";
+const hidePadding = new Array(100).fill(" ").join();
 
-const hidePadding = "                                                                                                                                                         ";
-let currentSearchString: string = "";
+class GlobalState {
+
+  static instance = new GlobalState();
+  
+  private _lastSearchBySymbol: string = ""; 
+  private _lastSearchByText: string = "";
+
+  setSearchStr(searchStr: string, method: "symbol" | "text"): void {
+    switch (method) {
+      case "symbol":
+        this._lastSearchBySymbol = searchStr;
+        break; 
+      case "text":
+        this._lastSearchByText = searchStr;
+        break; 
+    }
+  }
+
+  getSearchStr(method: "symbol" | "text"): string {
+    switch (method) {
+      case "symbol":
+        return this._lastSearchBySymbol;
+      case "text":
+        return this._lastSearchByText;
+    }
+  }
+}
 
 class QuickLineItem implements QuickPickItem {
 
@@ -33,6 +58,7 @@ class QuickLineItem implements QuickPickItem {
     readonly line: TextLine,
     readonly match: IMatchedRange, 
     private readonly _depth: number = 0, 
+    readonly searchMethod: "symbol" | "text", 
     readonly parent: QuickSymbolOutlineItem | null
   ) { 
     // The * indicates a match, which my definition is true if we are a line
@@ -58,7 +84,7 @@ class QuickLineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `${hidePadding}${currentSearchString}`;
+    return `${hidePadding}${GlobalState.instance.getSearchStr(this.searchMethod)}`;
   }
 
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
@@ -69,6 +95,7 @@ class QuickLineItem implements QuickPickItem {
 class QuickSymbolOutlineItem implements QuickPickItem {
   constructor(
     private _symbol: SymbolInformation,
+    readonly searchMethod: "symbol" | "text", 
     private _depth = 0,
     readonly parent: QuickSymbolOutlineItem | null = null
   ) {
@@ -85,7 +112,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
       // Symbols may not be returned to us sorted
       children.sort((a, b) => a.location.range.start.line - b.location.range.start.line);
 
-      this._children = children.map(child => new QuickSymbolOutlineItem(child, this._depth + 1, this));
+      this._children = children.map(child => new QuickSymbolOutlineItem(child, this.searchMethod, this._depth + 1, this));
     }
   }
 
@@ -94,6 +121,9 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   private _isSearchResult = false; 
 
   readonly ty = "symbol"; 
+  expanded: boolean;
+  picked = false;
+  hidden = false;
   
   get label(): string {
     const indicator = this._isSearchResult ? "*" : ""; 
@@ -104,16 +134,12 @@ class QuickSymbolOutlineItem implements QuickPickItem {
     return `${lineNumberFormatted} ${depthPadding} ${iconForKind(this._symbol.kind)} ${this._symbol.name}`;
   }
 
-  expanded: boolean;
-  picked = false;
-  hidden = false;
+  get description(): string {
+    return `${hidePadding}${GlobalState.instance.getSearchStr(this.searchMethod)}`;
+  }
 
   get children(): QuickOutlineItem[] {
     return this._children;
-  }
-
-  get description(): string {
-    return `${this._description}${hidePadding}${currentSearchString}`;
   }
 
   get symbolKind(): SymbolKind {
@@ -154,7 +180,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
       // Ensure sorted?
       this.expanded = true; 
       this.hidden = false; 
-      this.children.push(new QuickLineItem(line, match, this._depth + 1, this));
+      this.children.push(new QuickLineItem(line, match, this._depth + 1, this.searchMethod, this));
       return true; 
     }
 
@@ -212,9 +238,7 @@ export class QuickOutline {
         return; 
       }
 
-      if (searchMethod === "text") {
-        this._searchText(value);
-      }
+      this._search(value, searchMethod);
     });
     
     this._quickPick.onDidAccept(() => this._onDidAccept());
@@ -223,15 +247,17 @@ export class QuickOutline {
     });
 
     // Initialize items
-    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol));
+    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol, searchMethod));
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
+    const searchStr = GlobalState.instance.getSearchStr(searchMethod); 
+
     // Only restore serach if we are searching by text
-    if (searchMethod === "text" && currentSearchString.length) {
+    if (searchMethod === "text" && searchStr) {
       // This will trigger a search which we must catch!
-      this._quickPick.value = currentSearchString;
-      this._searchText(currentSearchString);
+      this._quickPick.value = searchStr;
+      this._search(searchStr, searchMethod);
       disableNextSearch = true; 
     }
 
@@ -270,8 +296,8 @@ export class QuickOutline {
     this._rootItems = []; 
   }
 
-  private _searchText(searchStrRaw: string): void {
-    currentSearchString = searchStrRaw; 
+  private _search(searchStrRaw: string, method: "symbol" | "text"): void {
+    GlobalState.instance.setSearchStr(searchStrRaw, method);
 
     console.log("Searching", searchStrRaw);
     if (searchStrRaw.length != 0 && searchStrRaw[0] !== "#") {
@@ -346,8 +372,19 @@ export class QuickOutline {
 
     else if (!isCommandString(commandString)) {
       const parsed = parseSearchString(searchStrRaw.slice(1)); // Discard .
-      const searchResults = 
-      searchDocument(this._editor.document, parsed); 
+      const searchResults: IMatchedRange[] = [];
+      if (method === "text") {
+        searchResults.push(...searchDocument(this._editor.document, parsed)); 
+      } else {
+        for (const item of this.items()) {
+          if (item.ty === "symbol") {
+            const match = searchLine(item.lineStart, item.name, parsed); 
+            if (match) {
+              searchResults.push(match);
+            }
+          }
+        }
+      }
 
       let foundParent = false; 
       for (const match of searchResults) {
@@ -361,9 +398,20 @@ export class QuickOutline {
 
     // We have a search with a command string
     else  {
-      console.log("Search with command");
       const parsed = parseSearchString(searchStr.slice(1)); // Discard .
-      const searchResults = searchDocument(this._editor.document, parsed); 
+      const searchResults: IMatchedRange[] = [];
+      if (method === "text") {
+        searchResults.push(...searchDocument(this._editor.document, parsed)); 
+      } else {
+        for (const item of this.items()) {
+          if (item.ty === "symbol") {
+            const match = searchLine(item.lineStart, item.name, parsed); 
+            if (match) {
+              searchResults.push(match);
+            }
+          }
+        }
+      }
 
       const symbolKinds = symbolKindsForCommandString(commandString); 
       const hitLines = new Set<number>(); 
