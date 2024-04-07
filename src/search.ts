@@ -22,7 +22,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-import { TextDocument, TextLine } from "vscode";
+import { SymbolKind, TextDocument, TextLine } from "vscode";
+import { ISearch } from "./ISearch";
 
 export interface IParsedSearchString {
   pattern: string,
@@ -34,6 +35,88 @@ export interface IParsedSearchString {
 export interface IMatchedRange {
   line: number,
   ranges: [number, number][];
+}
+
+function isCommandString(maybeCommandString: string): boolean {
+  if (maybeCommandString.length <= 1) {
+    return false;
+  }
+  const maybeFilterArg = maybeCommandString.slice(1).trim(); // Remove .
+  const validFilterArgs = new Set(['f', "c", "o", "e", "t"]);
+
+  for (const character of maybeFilterArg) {
+    if (!validFilterArgs.has(character)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
+  const out = new Set<SymbolKind>();
+
+  if (commandString.includes("f")) {
+    out.add(SymbolKind.Function);
+  }
+
+  if (commandString.includes("m")) {
+    out.add(SymbolKind.Method);
+  }
+
+  if (commandString.includes("c")) {
+    out.add(SymbolKind.Class);
+    out.add(SymbolKind.Property);
+  }
+
+  if (commandString.includes("s")) {
+    out.add(SymbolKind.Struct);
+    out.add(SymbolKind.Property);
+  }
+
+  if (commandString.includes("o")) {
+    out.add(SymbolKind.Object);
+  }
+
+  if (commandString.includes("e")) {
+    out.add(SymbolKind.Enum);
+    out.add(SymbolKind.EnumMember);
+  }
+
+  if (commandString.includes("t")) {
+    out.add(SymbolKind.Enum);
+    out.add(SymbolKind.Struct);
+    out.add(SymbolKind.Class);
+    out.add(SymbolKind.Interface);
+    out.add(SymbolKind.TypeParameter);
+  }
+
+  return out;
+}
+
+export function parseSearchCommand(inputStr: string): ISearch | null {
+  const regex = /(#\S+)\s+(.+)/;
+  const groups = inputStr.match(regex);
+
+  // Then we have a single str
+  if (!groups) {
+    if (inputStr.length <= 1) {
+      return null;
+    }
+
+    // We have only one selection. Either a search or a command
+    if (isCommandString(inputStr)) {
+      return { type: "filter", filter: symbolKindsForCommandString(inputStr) };
+    }
+
+    return { type: "simple", search: parseSearchString(inputStr.slice(1)) };
+  }
+
+  const search = parseSearchString(groups[2]);
+  const filter = symbolKindsForCommandString(groups[1]);
+
+  return { type: "filter-search", filter, search };
 }
 
 export function parseSearchString(searchStr: string): IParsedSearchString[] {

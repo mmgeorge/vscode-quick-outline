@@ -1,4 +1,6 @@
 import { SymbolKind, type SymbolInformation, TextEditor, Range } from "vscode";
+import { QuickOutlineItem } from "./QuickOutline";
+import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 
 export function pad(str: string): string {
   // Simply calling pad does not seem to position correclty in the pick list...
@@ -153,3 +155,12 @@ export function createSymbolFallbackDescription(symbol: SymbolInformation, activ
     case SymbolKind.String: return `string`;
   }
 }
+export function forEachParent(item: QuickOutlineItem, callback: (parent: QuickSymbolOutlineItem) => void): void {
+  let parent = item.parent;
+  while (parent != null) {
+    callback(parent);
+    parent = parent.parent;
+  }
+}
+export const hidePadding = new Array(100).fill(" ").join(" ");
+
