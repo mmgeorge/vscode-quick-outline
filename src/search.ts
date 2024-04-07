@@ -60,7 +60,7 @@ export function searchDocument(document: TextDocument, parsed: IParsedSearchStri
 	const items = [];
 	
   for (let i = 0; i < document.lineCount; i++) {
-		const matches = searchLine(i, document.lineAt(i).text, parsed);
+    const matches = searchLine(i, document.lineAt(i).text, parsed);
 		if (matches) {
 			items.push(matches);
 		}

@@ -22,7 +22,7 @@ const ignoredTypesIfEmpty = [
 
 type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
 
-const hidePadding = new Array(100).fill(" ").join();
+const hidePadding = new Array(100).fill(" ").join(" ");
 
 class GlobalState {
   static Get = new GlobalState();

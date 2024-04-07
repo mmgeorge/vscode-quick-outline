@@ -2,7 +2,7 @@
   "name": "quick-outline",
   "displayName": "Quick Outline",
   "description": "",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.87.0"
   },
