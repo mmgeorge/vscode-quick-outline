@@ -33,7 +33,8 @@ class QuickLineItem implements QuickPickItem {
     private readonly _depth: number = 0, 
     readonly parent: QuickSymbolOutlineItem | null
   ) { 
-    const lineNumberFormatted = pad(line.lineNumber.toString());
+    // The * indicates a match, which my definition is true if we are a line
+    const lineNumberFormatted = pad(line.lineNumber.toString() + "*");
     const depthPadding = "".padEnd(this._depth * 4, " ");;
 
     this.label = `${lineNumberFormatted} ${depthPadding} ${line.text.trim()}`;
@@ -76,11 +77,6 @@ class QuickSymbolOutlineItem implements QuickPickItem {
     this.expanded = false;  //expandedByDefaultTypes.includes(this._symbol.kind);
     this._description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
 
-    const line = this._symbol.location.range.start.line;
-    const lineNumberFormatted = pad(line.toString());
-    const depthPadding = "".padEnd(this._depth * 4, " ");;
-
-    this.label = `${lineNumberFormatted} ${depthPadding} ${iconForKind(this._symbol.kind)} ${this._symbol.name}`;
 
     if ("children" in _symbol) {
       const children = (_symbol.children as any as SymbolInformation[]) || [];
@@ -93,9 +89,18 @@ class QuickSymbolOutlineItem implements QuickPickItem {
 
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
+  private _isSearchResult = false; 
 
   readonly ty = "symbol"; 
-  readonly label: string;
+  
+  get label(): string {
+    const indicator = this._isSearchResult ? "*" : ""; 
+    const line = this._symbol.location.range.start.line;
+    const lineNumberFormatted = pad(line.toString() + indicator);
+    const depthPadding = "".padEnd(this._depth * 4, " ");;
+
+    return `${lineNumberFormatted} ${depthPadding} ${iconForKind(this._symbol.kind)} ${this._symbol.name}`;
+  }
 
   expanded: boolean;
   picked = false;
@@ -124,12 +129,14 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   get name(): string {
     return this._symbol.name;
   }
+  
 
   // Returns true if inserted
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
     if (line.lineNumber === this.lineStart) {
       // The search line refers exactly to this symbol. Clobber
       this.hidden = false; 
+      this._isSearchResult = true; 
       return true; 
     }
 
@@ -153,6 +160,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   }
 
   clearLineChildren(): void {
+    this._isSearchResult = false; 
     this._children = this._children.filter(child => child.ty !== "line"); 
   }
 
@@ -192,7 +200,7 @@ export class QuickOutline {
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
     this._quickPick.ignoreFocusOut = true;
-    this._quickPick.keepScrollPosition = true;
+    this._quickPick.keepScrollPosition = false;
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
     this._quickPick.onDidChangeValue((value) => {
       if (disableNextSearch) {
@@ -257,7 +265,7 @@ export class QuickOutline {
     currentSearchString = searchStrRaw; 
 
     console.log("Searching", searchStrRaw);
-    if (searchStrRaw.length === 0 || searchStrRaw[0] !== "#") {
+    if (searchStrRaw.length != 0 && searchStrRaw[0] !== "#") {
       this._quickPick.value = `#${searchStrRaw}`;
     }
     
@@ -328,7 +336,7 @@ export class QuickOutline {
     // We have only a search
 
     else if (!isCommandString(commandString)) {
-      const parsed = parseSearchString(searchStrRaw.slice(1)); // Discard #
+      const parsed = parseSearchString(searchStrRaw.slice(1)); // Discard .
       const searchResults = 
       searchDocument(this._editor.document, parsed); 
 
@@ -345,7 +353,7 @@ export class QuickOutline {
     // We have a search with a command string
     else  {
       console.log("Search with command");
-      const parsed = parseSearchString(searchStr.slice(1)); // Discard #
+      const parsed = parseSearchString(searchStr.slice(1)); // Discard .
       const searchResults = searchDocument(this._editor.document, parsed); 
 
       const symbolKinds = symbolKindsForCommandString(commandString); 
@@ -575,7 +583,7 @@ function isCommandString(maybeCommandString: string): boolean {
   if (maybeCommandString.length <= 1) {
     return false; 
   }
-  const maybeFilterArg = maybeCommandString.slice(1); // Remove #
+  const maybeFilterArg = maybeCommandString.slice(1); // Remove .
   const validFilterArgs = new Set(['f', "c", "o", "e", "t"]);
 
   for (const character of maybeFilterArg) {
