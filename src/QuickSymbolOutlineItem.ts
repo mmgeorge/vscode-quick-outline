@@ -14,8 +14,8 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
     depth = 0,
     parent: QuickSymbolOutlineItem | null = null
   ): QuickSymbolOutlineItem | null {
-    // Drop any symbols that are labeled "callbacks" - not very useful
-    if (symbol.kind === SymbolKind.Function && symbol.name.includes("callback")) {
+    // Drop any symbols that are labeled "callbacks" & not at the top level
+    if (symbol.kind === SymbolKind.Function && symbol.name.includes("callback") && depth !== 0) {
       return null;
     }
 
