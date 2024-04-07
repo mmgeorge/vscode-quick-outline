@@ -49,7 +49,16 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
 
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
+  private _searchMatch: IMatchedRange | null = null;;
   isSearchResult = false;
+
+  get match(): IMatchedRange {
+    if (!this.isSearchResult || !this._searchMatch) {
+      throw new Error("Cannot get match for symbol that is not a search result");
+    }
+
+    return this._searchMatch;
+  }
 
   readonly ty = "symbol";
   expanded: boolean;
@@ -98,6 +107,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
       // The search line refers exactly to this symbol. Clobber
       this.hidden = false;
       this.isSearchResult = true;
+      this._searchMatch = match;
       return true;
     }
 

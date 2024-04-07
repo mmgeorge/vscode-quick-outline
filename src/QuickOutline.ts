@@ -476,7 +476,7 @@ export class QuickOutline {
 
     const item = items[0];
 
-    if (item.ty === "symbol") {
+    if (item.ty === "symbol" && !item.isSearchResult) {
       const nameRange = item.getNameRange(this._editor.document);
 
       this._editor.revealRange(item.location.range);
