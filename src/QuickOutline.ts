@@ -22,6 +22,8 @@ const ignoredTypesIfEmpty = [
 
 type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
 
+const cmd = "#";
+
 const hidePadding = "                                                                                                                                                         ";
 let currentSearchString: string = "";
 
@@ -74,7 +76,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
       typeof this._symbol["detail"] === "string" &&
       this._symbol.detail.length > 0 ? this._symbol.detail : null;
 
-    this.expanded = false;  //expandedByDefaultTypes.includes(this._symbol.kind);
+    this.expanded = false;
     this._description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
 
 
@@ -192,7 +194,9 @@ export function setInQuickOutline(value: boolean) {
 
 export class QuickOutline {
 
-  constructor(symbols: SymbolInformation[]) {
+  constructor(
+    symbols: SymbolInformation[],
+    searchMethod: "symbol" | "text") {
     setInQuickOutline(true);
 
     let disableNextSearch = true; 
@@ -208,8 +212,11 @@ export class QuickOutline {
         return; 
       }
 
-      this._search(value);
+      if (searchMethod === "text") {
+        this._searchText(value);
+      }
     });
+    
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
       this.dispose();
@@ -220,9 +227,11 @@ export class QuickOutline {
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
-    if (currentSearchString.length) {
-      this._quickPick.value = currentSearchString; // This will trigger a search!
-      this._search(currentSearchString);
+    // Only restore serach if we are searching by text
+    if (searchMethod === "text" && currentSearchString.length) {
+      // This will trigger a search which we must catch!
+      this._quickPick.value = currentSearchString;
+      this._searchText(currentSearchString);
       disableNextSearch = true; 
     }
 
@@ -261,7 +270,7 @@ export class QuickOutline {
     this._rootItems = []; 
   }
 
-  private _search(searchStrRaw: string): void {
+  private _searchText(searchStrRaw: string): void {
     currentSearchString = searchStrRaw; 
 
     console.log("Searching", searchStrRaw);
