@@ -16,17 +16,12 @@ const ignoredTypesIfEmpty = [
   SymbolKind.Object
 ];
 
-export function setInQuickOutline(value: boolean) {
-  commands.executeCommand("setContext", "inQuickOutline", value);
-}
-
 export type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
 export class QuickOutline {
 
   constructor(
     symbols: SymbolInformation[],
     private readonly _searchMethod: "symbol" | "text") {
-    setInQuickOutline(true);
 
     let disableNextSearch = true;
 
@@ -46,17 +41,20 @@ export class QuickOutline {
 
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
+      this.onHide();
       this.dispose();
     });
 
     // Initialize items
-    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol, this._searchMethod));
+    const items = symbols
+      .map(symbol => QuickSymbolOutlineItem.tryCreate(symbol, this._searchMethod))
+      .filter(item => item != null) as QuickSymbolOutlineItem[];
+
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
-    const searchStr = GlobalState.Get.getSearchStr(this._searchMethod);
-
     // Restore the previous search
+    const searchStr = GlobalState.Get.getSearchStr(this._searchMethod);
     if (searchStr) {
       // This will trigger a search which we must catch!
       this._quickPick.value = searchStr;
@@ -73,11 +71,8 @@ export class QuickOutline {
       parent.expanded = true;
     });
 
-    // Finally trigger an update and render the outliner
     this._updateItems();
     this._updateActiveItem();
-
-    this._quickPick.show();
   }
 
   dispose() {
@@ -86,12 +81,13 @@ export class QuickOutline {
     }
 
     this._disposed = true;
-    setInQuickOutline(false);
 
     this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
     this._rootItems = [];
   }
+
+  onHide = () => { };
 
   private _disposed = false;
   private _quickPick = window.createQuickPick<QuickOutlineItem>();
@@ -99,7 +95,7 @@ export class QuickOutline {
   private _rootItems: QuickOutlineItem[];
   private _activeItem: QuickOutlineItem | null = null;
 
-  *symbolItems(): IterableIterator<QuickSymbolOutlineItem> {
+  * symbolItems(): IterableIterator<QuickSymbolOutlineItem> {
     for (const item of this.items()) {
       if (item.ty === 'symbol') {
         yield item;
@@ -107,7 +103,7 @@ export class QuickOutline {
     }
   }
 
-  *items(): IterableIterator<QuickOutlineItem> {
+  * items(): IterableIterator<QuickOutlineItem> {
     for (const item of this._rootItems) {
       yield item;
       yield* item.allNestedChildren();
@@ -126,6 +122,68 @@ export class QuickOutline {
     }
 
     this._updateItems();
+  }
+
+  firstSearchResult(): void {
+    const prevSearchResult = this._quickPick.items.find(item => item.isSearchResult);
+    if (prevSearchResult) {
+      this._activeItem = prevSearchResult;
+      this._updateActiveItem();
+    }
+  }
+
+  nextSearchResult(): void {
+    const active = this._activeItem;
+    if (!active) {
+      return;
+      // return this.firstSearchResult();
+    }
+
+    const index = this._quickPick.items.indexOf(active);
+    const nextSearchResult = this._quickPick.items
+      .find((item, i) => i > index && item.isSearchResult);
+    if (nextSearchResult) {
+      this._activeItem = nextSearchResult;
+      this._updateActiveItem();
+      return;
+    }
+
+    // If at the end, Cycle back to the first search
+    const prevSearchResult = this._quickPick.items.find(item => item.isSearchResult);
+    if (prevSearchResult) {
+      this._activeItem = prevSearchResult;
+      this._updateActiveItem();
+    }
+
+  }
+
+  previousSearchResult(): void {
+    const active = this._activeItem;
+    if (!active) {
+      return;
+      // return this.firstSearchResult();
+    }
+
+    const reversed = this._quickPick
+      .items.map(item => item)
+      .reverse();
+
+    const index = reversed.indexOf(active);
+    const nextSearchResult = reversed
+      .find((item, i) => i > index && item.isSearchResult);
+    if (nextSearchResult) {
+      this._activeItem = nextSearchResult;
+      this._updateActiveItem();
+      return;
+    }
+
+    // If at the end, Cycle back to the first search
+    const prevSearchResult = reversed.find(item => item.isSearchResult);
+    if (prevSearchResult) {
+      this._activeItem = prevSearchResult;
+      this._updateActiveItem();
+    }
+
   }
 
   setAllExpandEnabled(expanded: boolean): void {
@@ -194,7 +252,7 @@ export class QuickOutline {
     this._updateActiveItem();
   }
 
-  private _prepareItemsForSearch(): void {
+  private _hideAllItems(): void {
     for (const item of this.items()) {
       // Filter outer any lines we added from a previous search
       item.clearLineChildren();
@@ -215,11 +273,17 @@ export class QuickOutline {
 
     const search = parseSearchCommand(searchStr);
     if (search == null) {
-      return this._searchNone();
+      if (this._searchMethod === "text") {
+        this._hideAllItems();
+        this._updateItems();
+        return;
+      } else {
+        return this._searchNone();
+      }
     }
 
     // Reset any state, mark all items as hidden
-    this._prepareItemsForSearch();
+    this._hideAllItems();
 
     switch (search.type) {
       case "simple": return this._searchSimple(search);
@@ -252,7 +316,6 @@ export class QuickOutline {
     }
 
     this._updateItems();
-    return;
   }
 
   private _searchSimple(search: ISimpleSearch): void {
@@ -266,16 +329,20 @@ export class QuickOutline {
     }
 
     this._updateItems();
+    // this.firstSearchResult();
   }
 
   private _filter(filter: IFilter): void {
-    for (const item of this.symbolItems()) {
-      if (filter.filter.has(item.symbolKind)) {
-        item.hidden = false;
-        forEachParent(item, (parent) => {
-          parent.hidden = false;
-          parent.expanded = true;
-        });
+    // Only display filtered results if we have a search when in text mode
+    if (this._searchMethod === "symbol") {
+      for (const item of this.symbolItems()) {
+        if (filter.filter.has(item.symbolKind)) {
+          item.hidden = false;
+          forEachParent(item, (parent) => {
+            parent.hidden = false;
+            parent.expanded = true;
+          });
+        }
       }
     }
 
@@ -313,9 +380,8 @@ export class QuickOutline {
       }
     }
 
-
-
     this._updateItems();
+    // this.firstSearchResult();
   }
 
   private _updateActiveItem(): void {
@@ -334,6 +400,10 @@ export class QuickOutline {
     let closestLineDist = Infinity;
 
     for (const item of this.items()) {
+      if (item.hidden) {
+        continue;
+      }
+
       let line = -1;
       if (item.ty === "symbol") {
         const nameRange = item.getNameRange(this._editor.document);
@@ -400,6 +470,10 @@ export class QuickOutline {
   }
 
   private _onDidChangeActive(items: QuickOutlineItem[]) {
+    if (!items.length) {
+      return;
+    }
+
     const item = items[0];
 
     if (item.ty === "symbol") {

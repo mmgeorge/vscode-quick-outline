@@ -47,6 +47,14 @@
         "title": "Quick Outline: Search Text In File"
       },
       {
+        "command": "quick-outline.nextSearchResult",
+        "title": "Quick Outline: Search Text - Next Search Result"
+      },
+      {
+        "command": "quick-outline.previousSearchResult",
+        "title": "Quick Outline: Search Text - Previous Search Result"
+      },
+      {
         "command": "quick-outline.showAllFunctionMethod",
         "title": "Quick Outline: Show All Function Method"
       }

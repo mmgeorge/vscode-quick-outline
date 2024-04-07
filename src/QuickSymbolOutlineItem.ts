@@ -7,7 +7,22 @@ import { QuickOutlineItem } from "./QuickOutline";
 import { hidePadding } from "./utils";
 
 export class QuickSymbolOutlineItem implements QuickPickItem {
-  constructor(
+
+  static tryCreate(
+    symbol: SymbolInformation,
+    searchMethod: "symbol" | "text",
+    depth = 0,
+    parent: QuickSymbolOutlineItem | null = null
+  ): QuickSymbolOutlineItem | null {
+    // Drop any symbols that are labeled "callbacks" - not very useful
+    if (symbol.kind === SymbolKind.Function && symbol.name.includes("callback")) {
+      return null;
+    }
+
+    return new QuickSymbolOutlineItem(symbol, searchMethod, depth, parent);
+  }
+
+  private constructor(
     private _symbol: SymbolInformation,
     readonly searchMethod: "symbol" | "text",
     private _depth = 0,
@@ -26,7 +41,9 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
       // Symbols may not be returned to us sorted
       children.sort((a, b) => a.location.range.start.line - b.location.range.start.line);
 
-      this._children = children.map(child => new QuickSymbolOutlineItem(child, this.searchMethod, this._depth + 1, this));
+      this._children = children
+        .map(child => QuickSymbolOutlineItem.tryCreate(child, this.searchMethod, this._depth + 1, this))
+        .filter(item => item != null) as QuickOutlineItem[];
     }
   }
 

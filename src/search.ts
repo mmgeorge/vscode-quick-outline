@@ -42,12 +42,19 @@ function isCommandString(maybeCommandString: string): boolean {
     return false;
   }
   const maybeFilterArg = maybeCommandString.slice(1).trim(); // Remove .
-  const validFilterArgs = new Set(['f', "c", "o", "e", "t"]);
+  const validFilterArgs = new Set(['f', "c", "t"]);
+  const seenFilterArgs = new Set();
 
   for (const character of maybeFilterArg) {
     if (!validFilterArgs.has(character)) {
       return false;
     }
+
+    if (seenFilterArgs.has(character)) {
+      return false;
+    }
+
+    seenFilterArgs.add(character);
   }
 
   return true;
@@ -59,9 +66,6 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
 
   if (commandString.includes("f")) {
     out.add(SymbolKind.Function);
-  }
-
-  if (commandString.includes("m")) {
     out.add(SymbolKind.Method);
   }
 
@@ -70,22 +74,9 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
     out.add(SymbolKind.Property);
   }
 
-  if (commandString.includes("s")) {
-    out.add(SymbolKind.Struct);
-    out.add(SymbolKind.Property);
-  }
-
-  if (commandString.includes("o")) {
-    out.add(SymbolKind.Object);
-  }
-
-  if (commandString.includes("e")) {
-    out.add(SymbolKind.Enum);
-    out.add(SymbolKind.EnumMember);
-  }
-
   if (commandString.includes("t")) {
     out.add(SymbolKind.Enum);
+    out.add(SymbolKind.EnumMember);
     out.add(SymbolKind.Struct);
     out.add(SymbolKind.Class);
     out.add(SymbolKind.Interface);
