@@ -86,10 +86,6 @@ function _searchLine(lineIndex: number, line: string, parsed: IParsedSearchStrin
 			const regex = new RegExp(pattern, flags);
       const matches = regex.exec(line);
 
-      if (!matches) {
-        continue; 
-      }
-      
 			if (!matches && !p.negate) {
 				// regular mode, and this line doesn't match 
 				return null;
@@ -101,7 +97,7 @@ function _searchLine(lineIndex: number, line: string, parsed: IParsedSearchStrin
 				continue;
 			} else {
 				// normal mode, record the matched range. 
-				matchedRange.ranges.push([matches.index, matches[0].length]);
+				matchedRange.ranges.push([matches!.index, matches![0].length]);
 			}
 		} else {
 			const m = p.caseSensitive ? line.indexOf(p.pattern) : line.toLowerCase().indexOf(p.pattern);

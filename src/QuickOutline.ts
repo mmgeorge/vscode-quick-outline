@@ -22,6 +22,7 @@ const ignoredTypesIfEmpty = [
 
 type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
 
+const hidePadding = "                                                                                                                                                         ";
 let currentSearchString: string = "";
 
 class QuickLineItem implements QuickPickItem {
@@ -54,7 +55,7 @@ class QuickLineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `[${currentSearchString}]`;
+    return `${hidePadding}${currentSearchString}`;
   }
 
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
@@ -105,7 +106,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `${this._description} [${currentSearchString}]`;
+    return `${this._description}${hidePadding}${currentSearchString}`;
   }
 
   get symbolKind(): SymbolKind {
@@ -186,12 +187,21 @@ export class QuickOutline {
   constructor(symbols: SymbolInformation[]) {
     setInQuickOutline(true);
 
+    let disableNextSearch = true; 
+
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
     this._quickPick.ignoreFocusOut = true;
     this._quickPick.keepScrollPosition = true;
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
-    this._quickPick.onDidChangeValue((value) => this._search(value));
+    this._quickPick.onDidChangeValue((value) => {
+      if (disableNextSearch) {
+        disableNextSearch = false; 
+        return; 
+      }
+
+      this._search(value);
+    });
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
       this.dispose();
@@ -201,6 +211,12 @@ export class QuickOutline {
     const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol));
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
+
+    if (currentSearchString.length) {
+      this._quickPick.value = currentSearchString; // This will trigger a search!
+      this._search(currentSearchString);
+      disableNextSearch = true; 
+    }
 
     // Set the outliner to a symbol that is closest the current cursor's lined
     const initialPosition = this._editor.selection.start;
@@ -213,13 +229,12 @@ export class QuickOutline {
       parent.expanded = true;
       parent = parent.parent;
     }
-    console.log("create");
 
     // Finally trigger an update and render the outliner
     this._updateItems();
+    this._updateActiveItem();
 
     this._quickPick.show();
-
   }
 
   private _disposed = false;
@@ -284,7 +299,7 @@ export class QuickOutline {
       for (const item of this.items()) {
         item.hidden = false; 
       }
-      
+
       this._updateItems(); 
       return; 
     }
@@ -311,10 +326,11 @@ export class QuickOutline {
     }
 
     // We have only a search
+
     else if (!isCommandString(commandString)) {
-      console.log("Search");
-      const parsed = parseSearchString(searchStr.slice(1)); // Discard #
-      const searchResults = searchDocument(this._editor.document, parsed); 
+      const parsed = parseSearchString(searchStrRaw.slice(1)); // Discard #
+      const searchResults = 
+      searchDocument(this._editor.document, parsed); 
 
       let foundParent = false; 
       for (const match of searchResults) {
@@ -582,6 +598,10 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
 
   if (commandString.includes("c")) {
     out.add(SymbolKind.Class); 
+    out.add(SymbolKind.Property); 
+  }
+
+  if (commandString.includes("s")) {
     out.add(SymbolKind.Struct);
     out.add(SymbolKind.Property); 
   }
@@ -596,8 +616,10 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
   }
 
   if (commandString.includes("t")) {
-    out.add(SymbolKind.TypeParameter); 
+    out.add(SymbolKind.Struct);
+    out.add(SymbolKind.Class); 
     out.add(SymbolKind.Interface); 
+    out.add(SymbolKind.TypeParameter); 
   }
 
   return out;
