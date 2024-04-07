@@ -9,6 +9,7 @@ import { QuickLineItem } from "./QuickLineItem";
 import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 import { forEachParent } from "./utils";
 import { ISearch, ISimpleSearch, IFilter, IFilterSearch } from "./ISearch";
+import { timeStamp } from "console";
 
 const ignoredTypesIfEmpty = [
   SymbolKind.Module,
@@ -359,7 +360,43 @@ export class QuickOutline {
   }
 
   private _updateItems(): void {
-    this._quickPick.items = this._extractExpandedItems(this._rootItems);
+    const items = this._extractExpandedItems(this._rootItems);
+    if (1 || !GlobalState.Get.getSearchStr(this._searchMethod)) {
+      this._quickPick.items = items;
+      return;
+    }
+
+    // TODO: Figure out why this doesn't work..
+
+    // If we are in a search, output separators to make it clearer which
+    // items are directly related to the search vs. just the outline
+    // const itemsWithSeperators = [];
+    // let inSearch = false;
+
+    // for (const item of items) {
+    //   if (item.isSearchResult != inSearch) {
+    //     // Each time we enter a new search, emit a separate
+    //     if (!inSearch) {
+    //       const seperator: QuickPickItem = {
+    //         label: "Results",
+    //         kind: QuickPickItemKind.Separator,
+    //       };
+    //       itemsWithSeperators.push(seperator as any);
+    //     } else {
+    //       const seperator: QuickPickItem = {
+    //         label: "Outline",
+    //         kind: QuickPickItemKind.Separator,
+    //       };
+    //       itemsWithSeperators.push(seperator as any);
+    //     }
+
+    //     inSearch = item.isSearchResult;
+    //   }
+
+    //   itemsWithSeperators.push(item);
+    // }
+
+    // this._quickPick.items = itemsWithSeperators;
   }
 
   private _onDidChangeActive(items: QuickOutlineItem[]) {

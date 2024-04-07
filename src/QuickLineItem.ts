@@ -33,6 +33,10 @@ export class QuickLineItem implements QuickPickItem {
 
   clearLineChildren(): void { }
 
+  get isSearchResult(): boolean {
+    return true;
+  }
+
   get children(): QuickOutlineItem[] {
     return [];
   }

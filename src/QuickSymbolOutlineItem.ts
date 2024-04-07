@@ -32,7 +32,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
 
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
-  private _isSearchResult = false;
+  isSearchResult = false;
 
   readonly ty = "symbol";
   expanded: boolean;
@@ -40,7 +40,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
   hidden = false;
 
   get label(): string {
-    const indicator = this._isSearchResult ? "*" : "";
+    const indicator = this.isSearchResult ? "*" : "";
     const line = this._symbol.location.range.start.line;
     const lineNumberFormatted = pad(line.toString() + indicator);
     const depthPadding = "".padEnd(this._depth * 4, " ");;
@@ -80,7 +80,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
     if (passesFilter && line.lineNumber === this.lineStart) {
       // The search line refers exactly to this symbol. Clobber
       this.hidden = false;
-      this._isSearchResult = true;
+      this.isSearchResult = true;
       return true;
     }
 
@@ -104,7 +104,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
   }
 
   clearLineChildren(): void {
-    this._isSearchResult = false;
+    this.isSearchResult = false;
     this._children = this._children.filter(child => child.ty !== "line");
   }
 
