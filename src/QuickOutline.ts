@@ -4,7 +4,25 @@ import { createSymbolFallbackDescription, iconForKind, pad } from "./utils";
 
 
 import { close } from "fs";
-import { IMatchedRange, parseSearchString, searchDocument, searchLine } from "./search";
+import { IMatchedRange, IParsedSearchString, parseSearchString, searchDocument, searchLine } from "./search";
+
+interface ISimpleSearch {
+  type: "simple";
+  search: IParsedSearchString[];
+}
+
+interface IFilterSearch {
+  type: "filter-search";
+  search: IParsedSearchString[];
+  filter: Set<SymbolKind>;
+}
+
+interface IFilter {
+  type: "filter";
+  filter: Set<SymbolKind>;
+}
+
+export type ISearch = ISimpleSearch | IFilter | IFilterSearch;
 
 export type QuickItem = QuickPickItem & { symbol: SymbolInformation; };
 
@@ -20,25 +38,33 @@ const ignoredTypesIfEmpty = [
   SymbolKind.Object
 ];
 
-type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem; 
+type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
 
 const hidePadding = new Array(100).fill(" ").join(" ");
+
+function forEachParent(item: QuickOutlineItem, callback: (parent: QuickSymbolOutlineItem) => void): void {
+  let parent = item.parent;
+  while (parent != null) {
+    callback(parent);
+    parent = parent.parent;
+  }
+}
 
 class GlobalState {
   static Get = new GlobalState();
   private constructor() { }
 
-  private _lastSearchBySymbol: string = ""; 
+  private _lastSearchBySymbol: string = "";
   private _lastSearchByText: string = "";
 
   setSearchStr(searchStr: string, method: "symbol" | "text"): void {
     switch (method) {
       case "symbol":
         this._lastSearchBySymbol = searchStr;
-        break; 
+        break;
       case "text":
         this._lastSearchByText = searchStr;
-        break; 
+        break;
     }
   }
 
@@ -56,11 +82,11 @@ class QuickLineItem implements QuickPickItem {
 
   constructor(
     readonly line: TextLine,
-    readonly match: IMatchedRange, 
-    private readonly _depth: number = 0, 
-    readonly searchMethod: "symbol" | "text", 
+    readonly match: IMatchedRange,
+    private readonly _depth: number = 0,
+    readonly searchMethod: "symbol" | "text",
     readonly parent: QuickSymbolOutlineItem | null
-  ) { 
+  ) {
     // The * indicates a match, which my definition is true if we are a line
     const lineNumberFormatted = pad(line.lineNumber.toString() + "*");
     const depthPadding = "".padEnd(this._depth * 4, " ");;
@@ -68,17 +94,17 @@ class QuickLineItem implements QuickPickItem {
     this.label = `${lineNumberFormatted} ${depthPadding} ${line.text.trim()}`;
   }
 
-  readonly ty = "line"; 
-  readonly label: string; 
+  readonly ty = "line";
+  readonly label: string;
 
   picked = false;
   hidden = false;
-  expanded = false; 
+  expanded = false;
 
   *allNestedChildren(): IterableIterator<QuickOutlineItem> { }
 
-  clearLineChildren(): void {}
-  
+  clearLineChildren(): void { }
+
   get children(): QuickOutlineItem[] {
     return [];
   }
@@ -88,14 +114,14 @@ class QuickLineItem implements QuickPickItem {
   }
 
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
-    return false; 
+    return false;
   }
 }
 
 class QuickSymbolOutlineItem implements QuickPickItem {
   constructor(
     private _symbol: SymbolInformation,
-    readonly searchMethod: "symbol" | "text", 
+    readonly searchMethod: "symbol" | "text",
     private _depth = 0,
     readonly parent: QuickSymbolOutlineItem | null = null
   ) {
@@ -118,15 +144,15 @@ class QuickSymbolOutlineItem implements QuickPickItem {
 
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
-  private _isSearchResult = false; 
+  private _isSearchResult = false;
 
-  readonly ty = "symbol"; 
+  readonly ty = "symbol";
   expanded: boolean;
   picked = false;
   hidden = false;
-  
+
   get label(): string {
-    const indicator = this._isSearchResult ? "*" : ""; 
+    const indicator = this._isSearchResult ? "*" : "";
     const line = this._symbol.location.range.start.line;
     const lineNumberFormatted = pad(line.toString() + indicator);
     const depthPadding = "".padEnd(this._depth * 4, " ");;
@@ -135,7 +161,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
+    return `${this._description}${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
   get children(): QuickOutlineItem[] {
@@ -157,39 +183,39 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   get name(): string {
     return this._symbol.name;
   }
-  
+
 
   // Returns true if inserted
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
     if (line.lineNumber === this.lineStart) {
       // The search line refers exactly to this symbol. Clobber
-      this.hidden = false; 
-      this._isSearchResult = true; 
-      return true; 
+      this.hidden = false;
+      this._isSearchResult = true;
+      return true;
     }
 
     for (const child of this._children) {
       if (child.insertLineIfParent(match, line)) {
-        this.expanded = true; 
-        this.hidden = false; 
-        return true; 
+        this.expanded = true;
+        this.hidden = false;
+        return true;
       }
     }
 
     if (this.location.range.contains(line.range)) {
       // Ensure sorted?
-      this.expanded = true; 
-      this.hidden = false; 
+      this.expanded = true;
+      this.hidden = false;
       this.children.push(new QuickLineItem(line, match, this._depth + 1, this.searchMethod, this));
-      return true; 
+      return true;
     }
 
-    return false; 
+    return false;
   }
 
   clearLineChildren(): void {
-    this._isSearchResult = false; 
-    this._children = this._children.filter(child => child.ty !== "line"); 
+    this._isSearchResult = false;
+    this._children = this._children.filter(child => child.ty !== "line");
   }
 
   *allNestedChildren(): IterableIterator<QuickOutlineItem> {
@@ -222,10 +248,10 @@ export class QuickOutline {
 
   constructor(
     symbols: SymbolInformation[],
-    searchMethod: "symbol" | "text") {
+    private readonly _searchMethod: "symbol" | "text") {
     setInQuickOutline(true);
 
-    let disableNextSearch = true; 
+    let disableNextSearch = true;
 
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
@@ -234,31 +260,31 @@ export class QuickOutline {
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items as any));
     this._quickPick.onDidChangeValue((value) => {
       if (disableNextSearch) {
-        disableNextSearch = false; 
-        return; 
+        disableNextSearch = false;
+        return;
       }
 
-      this._search(value, searchMethod);
+      this._search(value);
     });
-    
+
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => {
       this.dispose();
     });
 
     // Initialize items
-    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol, searchMethod));
+    const items = symbols.map(symbol => new QuickSymbolOutlineItem(symbol, this._searchMethod));
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
-    const searchStr = GlobalState.Get.getSearchStr(searchMethod); 
+    const searchStr = GlobalState.Get.getSearchStr(this._searchMethod);
 
-    // Only restore serach if we are searching by text
-    if (searchMethod === "text" && searchStr) {
+    // Restore the previous search
+    if (searchStr) {
       // This will trigger a search which we must catch!
       this._quickPick.value = searchStr;
-      this._search(searchStr, searchMethod);
-      disableNextSearch = true; 
+      this._search(searchStr);
+      disableNextSearch = true;
     }
 
     // Set the outliner to a symbol that is closest the current cursor's lined
@@ -281,157 +307,151 @@ export class QuickOutline {
   }
 
   private _disposed = false;
- 
+
   dispose() {
     if (this._disposed) {
-      return; 
+      return;
     }
 
-    this._disposed = true; 
+    this._disposed = true;
     console.log("dispose");
     setInQuickOutline(false);
 
     this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
-    this._rootItems = []; 
+    this._rootItems = [];
   }
 
-  private _search(searchStrRaw: string, method: "symbol" | "text"): void {
-    GlobalState.Get.setSearchStr(searchStrRaw, method);
-
-    console.log("Searching", searchStrRaw);
-    if (searchStrRaw.length != 0 && searchStrRaw[0] !== "#") {
-      this._quickPick.value = `#${searchStrRaw}`;
-    }
-    
+  private _parseSearchCommand(inputStr: string): ISearch | null {
     const regex = /(#\S+)\s+(.+)/;
-    const groups = searchStrRaw.match(regex); 
+    const groups = inputStr.match(regex);
 
-    let commandString = ""; 
-    let searchStr: string; 
+    // Then we have a single str
     if (!groups) {
-      // Then we have a single str 
-      searchStr = searchStrRaw;
-    } else {
-      searchStr = groups[2];
-      commandString = groups[1]; 
-    }
-    
-    if (searchStr === "") {
-      for (const item of this.items()) {
-        item.clearLineChildren();
-        item.expanded = false; 
-        item.hidden = false; 
+      if (inputStr.length <= 1) {
+        return null;
       }
 
-      this._updateItems();
-      return; 
+      // We have only one selection. Either a search or a command
+      if (isCommandString(inputStr)) {
+        return { type: "filter", filter: symbolKindsForCommandString(inputStr) };
+      }
+
+      return { type: "simple", search: parseSearchString(inputStr.slice(1)) };
     }
 
+    const search = parseSearchString(groups[2]);
+    const filter = symbolKindsForCommandString(groups[1]);
+
+    return { type: "filter-search", filter, search };
+  }
+
+  private _searchNone(): void {
+    for (const item of this.items()) {
+      item.clearLineChildren();
+      item.expanded = false;
+      item.hidden = false;
+    }
+
+    this._updateItems();
+    return;
+  }
+
+  private _prepareItemsForSearch(): void {
     for (const item of this.items()) {
       // Filter outer any lines we added from a previous search
       item.clearLineChildren();
-      item.hidden = true; 
-      item.expanded = false; 
+      item.hidden = true;
+      item.expanded = false;
+    }
+  }
+
+  private _search(searchStr: string): void {
+    // We may restore the value for a new session
+    GlobalState.Get.setSearchStr(searchStr, this._searchMethod);
+
+    // Make sure the command box always has '#' when search -- this is a workaround
+    // to shortcircuit the native searching that the input does
+    if (searchStr.length != 0 && searchStr[0] !== "#") {
+      this._quickPick.value = `#${searchStr}`;
     }
 
-    searchStr = searchStr.trim(); 
-    
-
-    if (searchStr === "" || searchStr === "#") {
-      for (const item of this.items()) {
-        item.hidden = false; 
-      }
-
-      this._updateItems(); 
-      return; 
-    }
-    
-    // Just filter the symbols
-    if (isCommandString(searchStr) || (
-        isCommandString(commandString) && searchStr.length === 0)) {
-      console.log("Command only");
-      const symbolKinds = symbolKindsForCommandString(searchStr); 
-
-      for (const item of this.items()) {
-        if (item.ty === "symbol") {
-          if (symbolKinds.has(item.symbolKind)) {
-              item.hidden = false; 
-              let parent = item.parent; 
-              while (parent != null) {
-                parent.hidden = false;
-                parent.expanded = true; 
-                parent = parent.parent;
-              }
-          }
-        }
-      }
+    const search = this._parseSearchCommand(searchStr);
+    console.log("Handle search", search);
+    if (search == null) {
+      return this._searchNone();
     }
 
-    // We have only a search
+    // Reset any state, mark all items as hidden
+    this._prepareItemsForSearch();
 
-    else if (!isCommandString(commandString)) {
-      const parsed = parseSearchString(searchStrRaw.slice(1)); // Discard .
-      const searchResults: IMatchedRange[] = [];
-      if (method === "text") {
-        searchResults.push(...searchDocument(this._editor.document, parsed)); 
-      } else {
-        for (const item of this.items()) {
-          if (item.ty === "symbol") {
-            const match = searchLine(item.lineStart, item.name, parsed); 
-            if (match) {
-              searchResults.push(match);
-            }
-          }
-        }
-      }
+    switch (search.type) {
+      case "simple": return this._searchSimple(search);
+      case "filter": return this._filter(search);
+      case "filter-search": return this._filterSearch(search);
+    }
+  }
 
-      let foundParent = false; 
-      for (const match of searchResults) {
-        for (const item of this._rootItems) {
-          const line = this._editor.document.lineAt(match.line); 
-          
-          item.insertLineIfParent(match, line);
-        }
+  private _getSearchResults(parsedSearch: IParsedSearchString[]): IMatchedRange[] {
+    if (this._searchMethod === "text") {
+      return searchDocument(this._editor.document, parsedSearch);
+    }
+
+    const searchResults: IMatchedRange[] = [];
+    for (const item of this.symbolItems()) {
+      const match = searchLine(item.lineStart, item.name, parsedSearch);
+      if (match) {
+        searchResults.push(match);
       }
     }
 
-    // We have a search with a command string
-    else  {
-      const parsed = parseSearchString(searchStr.slice(1)); // Discard .
-      const searchResults: IMatchedRange[] = [];
-      if (method === "text") {
-        searchResults.push(...searchDocument(this._editor.document, parsed)); 
-      } else {
-        for (const item of this.items()) {
-          if (item.ty === "symbol") {
-            const match = searchLine(item.lineStart, item.name, parsed); 
-            if (match) {
-              searchResults.push(match);
-            }
-          }
-        }
-      }
+    return searchResults;
+  }
 
-      const symbolKinds = symbolKindsForCommandString(commandString); 
-      const hitLines = new Set<number>(); 
-      for (const result of searchResults) {
-        hitLines.add(result.line);
-      }
+  private _searchSimple(search: ISimpleSearch): void {
+    const searchResults = this._getSearchResults(search.search);
+    for (const match of searchResults) {
+      for (const item of this._rootItems) {
+        const line = this._editor.document.lineAt(match.line);
 
-      for (const item of this.items()) {
-        if (item.ty === "symbol") {
-          if (symbolKinds.has(item.symbolKind)) {
-            if (hitLines.has(item.lineStart)) {
-              item.hidden = false; 
-              let parent = item.parent; 
-              while (parent != null) {
-                parent.hidden = false;
-                parent.expanded = true; 
-                parent = parent.parent;
-              }
-            }
-          }
+        item.insertLineIfParent(match, line);
+      }
+    }
+
+    this._updateItems();
+  }
+
+  private _filter(filter: IFilter): void {
+    console.log("Hanlde filter", filter);
+    for (const item of this.symbolItems()) {
+      if (filter.filter.has(item.symbolKind)) {
+        item.hidden = false;
+        forEachParent(item, (parent) => {
+          parent.hidden = false;
+          parent.expanded = true;
+        });
+      }
+    }
+
+    console.log("End", filter);
+    this._updateItems();
+  }
+
+  private _filterSearch(filter: IFilterSearch): void {
+    const searchResults = this._getSearchResults(filter.search);
+    const hitLines = new Set<number>();
+    for (const result of searchResults) {
+      hitLines.add(result.line);
+    }
+
+    for (const item of this.symbolItems()) {
+      if (filter.filter.has(item.symbolKind)) {
+        if (hitLines.has(item.lineStart)) {
+          item.hidden = false;
+          forEachParent(item, (parent) => {
+            parent.hidden = false;
+            parent.expanded = true;
+          });
         }
       }
     }
@@ -443,6 +463,14 @@ export class QuickOutline {
   protected _editor = window.activeTextEditor!;
   protected _rootItems: QuickOutlineItem[];
   private _activeItem: QuickOutlineItem | null = null;
+
+  *symbolItems(): IterableIterator<QuickSymbolOutlineItem> {
+    for (const item of this.items()) {
+      if (item.ty === 'symbol') {
+        yield item;
+      }
+    }
+  }
 
   *items(): IterableIterator<QuickOutlineItem> {
     for (const item of this._rootItems) {
@@ -529,10 +557,10 @@ export class QuickOutline {
 
   private _updateActiveItem(): void {
     if (!this._activeItem) {
-      return; 
+      return;
     }
 
-    this._quickPick.activeItems = [this._activeItem]; 
+    this._quickPick.activeItems = [this._activeItem];
     // `show` seems to be required in order for the quickPick to reselect
     // the correct active item
     this._quickPick.show();
@@ -543,7 +571,7 @@ export class QuickOutline {
     let closestLineDist = Infinity;
 
     for (const item of this.items()) {
-      let line = -1; 
+      let line = -1;
       if (item.ty === "symbol") {
         const nameRange = item.getNameRange(this._editor.document);
         line = nameRange.start.line;
@@ -573,7 +601,6 @@ export class QuickOutline {
   }
 
   private _onDidChangeActive(items: QuickOutlineItem[]) {
-    console.log("change active");
     const item = items[0];
 
     if (item.ty === "symbol") {
@@ -584,8 +611,8 @@ export class QuickOutline {
     } else {
       const ranges = item.match.ranges.map(([start, length]) => {
         return new Range(
-          new Position(item.line.lineNumber, start), 
-          new Position(item.line.lineNumber, start + length), 
+          new Position(item.line.lineNumber, start),
+          new Position(item.line.lineNumber, start + length),
         );
       });
 
@@ -606,11 +633,11 @@ export class QuickOutline {
       return;
     }
 
-    let range: Range; 
+    let range: Range;
     if (item.ty === "symbol") {
       range = item.getNameRange(this._editor.document);
     } else {
-      range = item.line.range; 
+      range = item.line.range;
     }
 
     this._editor.selection = new Selection(range.start, range.start);
@@ -622,7 +649,7 @@ export class QuickOutline {
   private _extractExpandedItems(items: QuickOutlineItem[], out: QuickOutlineItem[] = []): QuickOutlineItem[] {
     for (const item of items) {
       if (item.hidden) {
-        continue; 
+        continue;
       }
 
       out.push(item);
@@ -638,53 +665,53 @@ export class QuickOutline {
 
 function isCommandString(maybeCommandString: string): boolean {
   if (maybeCommandString.length <= 1) {
-    return false; 
+    return false;
   }
-  const maybeFilterArg = maybeCommandString.slice(1); // Remove .
+  const maybeFilterArg = maybeCommandString.slice(1).trim(); // Remove .
   const validFilterArgs = new Set(['f', "c", "o", "e", "t"]);
 
   for (const character of maybeFilterArg) {
     if (!validFilterArgs.has(character)) {
-      return false; 
+      return false;
     }
   }
 
-  return true; 
+  return true;
 }
 
 
 function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
-  const out = new Set<SymbolKind>(); 
+  const out = new Set<SymbolKind>();
 
   if (commandString.includes("f")) {
-    out.add(SymbolKind.Method); 
-    out.add(SymbolKind.Function); 
+    out.add(SymbolKind.Method);
+    out.add(SymbolKind.Function);
   }
 
   if (commandString.includes("c")) {
-    out.add(SymbolKind.Class); 
-    out.add(SymbolKind.Property); 
+    out.add(SymbolKind.Class);
+    out.add(SymbolKind.Property);
   }
 
   if (commandString.includes("s")) {
     out.add(SymbolKind.Struct);
-    out.add(SymbolKind.Property); 
+    out.add(SymbolKind.Property);
   }
 
   if (commandString.includes("o")) {
-    out.add(SymbolKind.Object); 
+    out.add(SymbolKind.Object);
   }
 
   if (commandString.includes("e")) {
-    out.add(SymbolKind.Enum); 
-    out.add(SymbolKind.EnumMember); 
+    out.add(SymbolKind.Enum);
+    out.add(SymbolKind.EnumMember);
   }
 
   if (commandString.includes("t")) {
     out.add(SymbolKind.Struct);
-    out.add(SymbolKind.Class); 
-    out.add(SymbolKind.Interface); 
-    out.add(SymbolKind.TypeParameter); 
+    out.add(SymbolKind.Class);
+    out.add(SymbolKind.Interface);
+    out.add(SymbolKind.TypeParameter);
   }
 
   return out;
