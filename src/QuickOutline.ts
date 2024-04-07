@@ -10,24 +10,16 @@ import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 import { forEachParent } from "./utils";
 import { ISearch, ISimpleSearch, IFilter, IFilterSearch } from "./ISearch";
 
-const expandedByDefaultTypes = [
-  SymbolKind.Class,
-  SymbolKind.Struct,
-  SymbolKind.Interface,
-  SymbolKind.Object
-];
-
 const ignoredTypesIfEmpty = [
   SymbolKind.Module,
   SymbolKind.Object
 ];
 
-export type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
-
 export function setInQuickOutline(value: boolean) {
   commands.executeCommand("setContext", "inQuickOutline", value);
 }
 
+export type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
 export class QuickOutline {
 
   constructor(
@@ -75,13 +67,10 @@ export class QuickOutline {
     const initialPosition = this._editor.selection.start;
     const closestItem = this._getClosestItem(initialPosition);
     this._activeItem = closestItem;
-
-    // Expand any parents along the way so we can see it
-    let parent = closestItem.parent;
-    while (parent != null) {
+    forEachParent(closestItem, (parent) => {
+      // Expand any parents along the way so we can see it
       parent.expanded = true;
-      parent = parent.parent;
-    }
+    });
 
     // Finally trigger an update and render the outliner
     this._updateItems();
