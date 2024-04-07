@@ -25,9 +25,9 @@ type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
 const hidePadding = new Array(100).fill(" ").join();
 
 class GlobalState {
+  static Get = new GlobalState();
+  private constructor() { }
 
-  static instance = new GlobalState();
-  
   private _lastSearchBySymbol: string = ""; 
   private _lastSearchByText: string = "";
 
@@ -84,7 +84,7 @@ class QuickLineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `${hidePadding}${GlobalState.instance.getSearchStr(this.searchMethod)}`;
+    return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
   insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
@@ -135,7 +135,7 @@ class QuickSymbolOutlineItem implements QuickPickItem {
   }
 
   get description(): string {
-    return `${hidePadding}${GlobalState.instance.getSearchStr(this.searchMethod)}`;
+    return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
   get children(): QuickOutlineItem[] {
@@ -251,7 +251,7 @@ export class QuickOutline {
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
-    const searchStr = GlobalState.instance.getSearchStr(searchMethod); 
+    const searchStr = GlobalState.Get.getSearchStr(searchMethod); 
 
     // Only restore serach if we are searching by text
     if (searchMethod === "text" && searchStr) {
@@ -297,7 +297,7 @@ export class QuickOutline {
   }
 
   private _search(searchStrRaw: string, method: "symbol" | "text"): void {
-    GlobalState.instance.setSearchStr(searchStrRaw, method);
+    GlobalState.Get.setSearchStr(searchStrRaw, method);
 
     console.log("Searching", searchStrRaw);
     if (searchStrRaw.length != 0 && searchStrRaw[0] !== "#") {
