@@ -481,6 +481,19 @@ export class QuickOutline {
 
       this._editor.revealRange(item.location.range);
       this._editor.setDecorations(selectionStyle, [nameRange]);
+    } else if (item.ty === "symbol") {
+      const ranges = item.match.ranges.map(([start, length]) => {
+        return new Range(
+          new Position(item.lineStart, start),
+          new Position(item.lineStart, start + length),
+        );
+      });
+
+      for (const [start, length] of item.match.ranges) {
+        this._editor.setDecorations(selectionStyle, ranges);
+      }
+
+      this._editor.revealRange(ranges[0]);
     } else {
       const ranges = item.match.ranges.map(([start, length]) => {
         return new Range(

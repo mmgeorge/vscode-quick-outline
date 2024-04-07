@@ -24,7 +24,7 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand('quick-outline.showOutline', showOutline),
     commands.registerCommand('quick-outline.searchTextInFile', searchTextInFile),
     commands.registerCommand('quick-outline.nextSearchResult', () => quickOutlineForTextSearch?.nextSearchResult()),
-    commands.registerCommand('quick-outline.previousSearchResult', () => quickOutlineForTextSearch?.previousSearchResult())
+    commands.registerCommand('quick-outline.previousSearchResult', () => quickOutlineForTextSearch?.previousSearchResult()),
     commands.registerCommand('quick-outline.expand', () => quickOutline?.setActiveItemExpandEnabled(true)),
     commands.registerCommand('quick-outline.collapse', () => quickOutline?.setActiveItemExpandEnabled(false)),
     commands.registerCommand('quick-outline.expandAll', () => quickOutline?.setAllExpandEnabled(true)),
