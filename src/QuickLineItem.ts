@@ -1,9 +1,10 @@
-import { type QuickPickItem, TextLine } from "vscode";
+import { type QuickPickItem, TextLine, SymbolKind } from "vscode";
 import { pad } from "./utils";
 import { IMatchedRange } from "./search";
 import { GlobalState } from "./GlobalState";
-import { QuickSymbolOutlineItem, QuickOutlineItem } from "./QuickOutline";
+import { QuickOutlineItem } from "./QuickOutline";
 import { hidePadding } from "./utils";
+import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 
 export class QuickLineItem implements QuickPickItem {
 
@@ -40,7 +41,7 @@ export class QuickLineItem implements QuickPickItem {
     return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
-  insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
+  insertLineIfParent(match: IMatchedRange, line: TextLine, filter: Set<SymbolKind> | null): boolean {
     return false;
   }
 }

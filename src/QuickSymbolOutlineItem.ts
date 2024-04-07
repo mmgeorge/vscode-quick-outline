@@ -74,8 +74,10 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
 
 
   // Returns true if inserted
-  insertLineIfParent(match: IMatchedRange, line: TextLine): boolean {
-    if (line.lineNumber === this.lineStart) {
+  insertLineIfParent(match: IMatchedRange, line: TextLine, filter: Set<SymbolKind> | null): boolean {
+    const passesFilter = !filter || filter.has(this.symbolKind);
+
+    if (passesFilter && line.lineNumber === this.lineStart) {
       // The search line refers exactly to this symbol. Clobber
       this.hidden = false;
       this._isSearchResult = true;
@@ -83,14 +85,14 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
     }
 
     for (const child of this._children) {
-      if (child.insertLineIfParent(match, line)) {
+      if (child.insertLineIfParent(match, line, filter)) {
         this.expanded = true;
         this.hidden = false;
         return true;
       }
     }
 
-    if (this.location.range.contains(line.range)) {
+    if (passesFilter && this.location.range.contains(line.range)) {
       // Ensure sorted?
       this.expanded = true;
       this.hidden = false;

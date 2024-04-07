@@ -260,7 +260,7 @@ export class QuickOutline {
       for (const item of this._rootItems) {
         const line = this._editor.document.lineAt(match.line);
 
-        item.insertLineIfParent(match, line);
+        item.insertLineIfParent(match, line, null);
       }
     }
 
@@ -288,17 +288,31 @@ export class QuickOutline {
       hitLines.add(result.line);
     }
 
-    for (const item of this.symbolItems()) {
-      if (filter.filter.has(item.symbolKind)) {
-        if (hitLines.has(item.lineStart)) {
-          item.hidden = false;
-          forEachParent(item, (parent) => {
-            parent.hidden = false;
-            parent.expanded = true;
-          });
+    if (this._searchMethod == "text") {
+      for (const match of searchResults) {
+        for (const item of this._rootItems) {
+          const line = this._editor.document.lineAt(match.line);
+
+          item.insertLineIfParent(match, line, filter.filter);
         }
       }
     }
+
+    else {
+      for (const item of this.symbolItems()) {
+        if (filter.filter.has(item.symbolKind)) {
+          if (hitLines.has(item.lineStart)) {
+            item.hidden = false;
+            forEachParent(item, (parent) => {
+              parent.hidden = false;
+              parent.expanded = true;
+            });
+          }
+        }
+      }
+    }
+
+
 
     this._updateItems();
   }
