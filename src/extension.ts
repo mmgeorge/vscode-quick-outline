@@ -1,5 +1,6 @@
 import { commands, window, type ExtensionContext, type TextEditor, type SymbolInformation, type QuickPickItem, SymbolKind, workspace } from "vscode";
 import { QuickOutline } from "./QuickOutline";
+import { GlobalState } from "./GlobalState";
 
 export const selectionStyle = window.createTextEditorDecorationType({
   border: "solid",
@@ -8,10 +9,12 @@ export const selectionStyle = window.createTextEditorDecorationType({
 });
 
 export function setInQuickOutline(value: boolean) {
+  console.log("setInQuickOutline", value);
   commands.executeCommand("setContext", "inQuickOutline", value);
 }
 
 export function setInQuickOutlineSearch(value: boolean) {
+  console.log("setInQuickOutlineSearch", value);
   commands.executeCommand("setContext", "inQuickOutlineSearch", value);
 }
 
@@ -23,6 +26,7 @@ export function activate(context: ExtensionContext) {
   let cmds = [
     commands.registerCommand('quick-outline.showOutline', showOutline),
     commands.registerCommand('quick-outline.searchTextInFile', searchTextInFile),
+    commands.registerCommand('quick-outline.searchSelectionInFile', searchSelectionInFile),
     commands.registerCommand('quick-outline.nextSearchResult', () => quickOutlineForTextSearch?.nextSearchResult()),
     commands.registerCommand('quick-outline.previousSearchResult', () => quickOutlineForTextSearch?.previousSearchResult()),
     commands.registerCommand('quick-outline.expand', () => quickOutline?.setActiveItemExpandEnabled(true)),
@@ -31,11 +35,10 @@ export function activate(context: ExtensionContext) {
     commands.registerCommand('quick-outline.collapseAll', () => quickOutline?.setAllExpandEnabled(false)),
     commands.registerCommand('quick-outline.showAllFunctionMethod', () => quickOutline?.showAll([SymbolKind.Function, SymbolKind.Method])),
   ];
-
-  console.log(window.tabGroups.all);
 }
 
 export function deactivate() {
+  console.log("Deactivate");
   quickOutline?.dispose();
   quickOutlineForTextSearch?.dispose();
   setInQuickOutline(false);
@@ -43,7 +46,6 @@ export function deactivate() {
 }
 
 async function showOutline() {
-  console.log("Show outline");
   const document = window.activeTextEditor?.document;
 
   if (!document) {
@@ -59,14 +61,12 @@ async function showOutline() {
   };
 }
 
-async function searchTextInFile() {
-  console.log("Show serach outline");
+async function searchTextInFile(): Promise<void> {
   const document = window.activeTextEditor?.document;
 
   if (!document) {
     return;
   }
-
 
   const symbols = await commands.executeCommand<SymbolInformation[]>("vscode.executeDocumentSymbolProvider", document.uri);
 
@@ -77,3 +77,15 @@ async function searchTextInFile() {
   };
 }
 
+async function searchSelectionInFile() {
+  const editor = window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+
+  const text = editor.document.getText(editor.selection) ?? "";
+  GlobalState.Get.setSearchStr("#" + text, "text");
+
+  await searchTextInFile();
+}
+;

@@ -5,6 +5,7 @@ import { GlobalState } from "./GlobalState";
 import { QuickOutlineItem } from "./QuickOutline";
 import { hidePadding } from "./utils";
 import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
+import { stringify } from "querystring";
 
 export class QuickLineItem implements QuickPickItem {
 
@@ -32,6 +33,12 @@ export class QuickLineItem implements QuickPickItem {
   *allNestedChildren(): IterableIterator<QuickOutlineItem> { }
 
   clearLineChildren(): void { }
+
+  toJSON() {
+    return {
+      label: this.label
+    };
+  }
 
   get isSearchResult(): boolean {
     return true;

@@ -48,6 +48,10 @@
         "title": "Quick Outline: Search Text In File"
       },
       {
+        "command": "quick-outline.searchSelectionInFile",
+        "title": "Quick Outline: Search Selection In File"
+      },
+      {
         "command": "quick-outline.nextSearchResult",
         "title": "Quick Outline: Search Text - Next Search Result"
       },

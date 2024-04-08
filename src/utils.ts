@@ -156,7 +156,12 @@ export function createSymbolFallbackDescription(symbol: SymbolInformation, activ
   }
 }
 export function forEachParent(item: QuickOutlineItem, callback: (parent: QuickSymbolOutlineItem) => void): void {
+  if (!item) {
+    throw new Error("Tried to call forEachParent on null item");
+  }
+
   let parent = item.parent;
+
   while (parent != null) {
     callback(parent);
     parent = parent.parent;

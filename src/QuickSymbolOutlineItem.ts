@@ -65,6 +65,12 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
   picked = false;
   hidden = false;
 
+  toJSON() {
+    return {
+      label: this.label
+    };
+  }
+
   get label(): string {
     const indicator = this.isSearchResult ? "*" : "";
     const line = this._symbol.location.range.start.line;
