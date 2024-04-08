@@ -42,7 +42,7 @@ function isCommandString(maybeCommandString: string): boolean {
     return false;
   }
   const maybeFilterArg = maybeCommandString.slice(1).trim(); // Remove .
-  const validFilterArgs = new Set(['f', "c", "t"]);
+  const validFilterArgs = new Set(['f', "c", "t", "p"]);
   const seenFilterArgs = new Set();
 
   for (const character of maybeFilterArg) {
@@ -69,17 +69,18 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
     out.add(SymbolKind.Method);
   }
 
-  if (commandString.includes("c")) {
-    out.add(SymbolKind.Class);
-    out.add(SymbolKind.Property);
-  }
-
   if (commandString.includes("t")) {
     out.add(SymbolKind.Enum);
     out.add(SymbolKind.EnumMember);
     out.add(SymbolKind.Struct);
     out.add(SymbolKind.Class);
     out.add(SymbolKind.Interface);
+    out.add(SymbolKind.TypeParameter);
+  }
+
+  if (commandString.includes("p")) {
+    out.add(SymbolKind.EnumMember);
+    out.add(SymbolKind.Property);
     out.add(SymbolKind.TypeParameter);
   }
 
