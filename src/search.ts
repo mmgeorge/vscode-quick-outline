@@ -85,29 +85,35 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
 
   return out;
 }
-
+nex
 export function parseSearchCommand(inputStr: string): ISearch | null {
   const regex = /(#\S+)\s+(.+)/;
   const groups = inputStr.match(regex);
 
-  // Then we have a single str
-  if (!groups) {
-    if (inputStr.length <= 1) {
-      return null;
+  try {
+    // Then we have a single str
+    if (!groups) {
+      if (inputStr.length <= 1) {
+        return null;
+      }
+
+      // We have only one selection. Either a search or a command
+      if (isCommandString(inputStr)) {
+        return { type: "filter", filter: symbolKindsForCommandString(inputStr) };
+      }
+
+      return { type: "simple", search: parseSearchString(inputStr.slice(1)) };
     }
 
-    // We have only one selection. Either a search or a command
-    if (isCommandString(inputStr)) {
-      return { type: "filter", filter: symbolKindsForCommandString(inputStr) };
-    }
+    const search = parseSearchString(groups[2]);
+    const filter = symbolKindsForCommandString(groups[1]);
 
-    return { type: "simple", search: parseSearchString(inputStr.slice(1)) };
+    return { type: "filter-search", filter, search };
+  } catch (e) {
+    console.log("Failed to parse command. Falling back to empty search");
+    return null;
   }
 
-  const search = parseSearchString(groups[2]);
-  const filter = symbolKindsForCommandString(groups[1]);
-
-  return { type: "filter-search", filter, search };
 }
 
 export function parseSearchString(searchStr: string): IParsedSearchString[] {

@@ -80,8 +80,6 @@ export class QuickOutline {
       return;
     }
 
-    console.log("dispose");
-
     this._disposed = true;
 
     this._editor.setDecorations(selectionStyle, []);
@@ -146,8 +144,8 @@ export class QuickOutline {
     const prevSearchResult = this._quickPick.items.find(item => item.isSearchResult);
     if (prevSearchResult) {
       this._updateActiveItem(prevSearchResult);
+      return;
     }
-
   }
 
   previousSearchResult(): void {
@@ -266,12 +264,9 @@ export class QuickOutline {
     GlobalState.Get.setSearchStr(searchStr, this._searchMethod);
 
     const search = parseSearchCommand(searchStr);
-    console.log(search);
-
     if (search == null) {
       if (this._searchMethod === "text") {
         this._hideAllItems();
-        //this._updateItems();
         return;
       } else {
         return this._searchNone();
