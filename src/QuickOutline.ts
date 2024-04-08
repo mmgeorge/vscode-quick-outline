@@ -108,12 +108,6 @@ export class QuickOutline {
     }
   }
 
-  setSearch(search: string): void {
-    if (this._disposed) throw new Error("Cannot search items, disposed");
-    //this._quickPick.value = `#${search}`;
-    this._search(`#${search}`);
-  }
-
   showAll(kinds: SymbolKind[]): void {
     for (const item of this.items()) {
       if (item.ty === "symbol" && kinds.includes(item.symbolKind)) {
@@ -146,6 +140,9 @@ export class QuickOutline {
       this._updateActiveItem(prevSearchResult);
       return;
     }
+
+    // If we have no searches, fallback to the default next command
+    commands.executeCommand("workbench.action.quickOpenSelectNext");
   }
 
   previousSearchResult(): void {
@@ -170,8 +167,11 @@ export class QuickOutline {
     const prevSearchResult = reversed.find(item => item.isSearchResult);
     if (prevSearchResult) {
       this._updateActiveItem(prevSearchResult);
+      return;
     }
 
+    // If we have no searches, fallback to the default next command
+    commands.executeCommand("workbench.action.quickOpenSelectPrevious");
   }
 
   setAllExpandEnabled(expanded: boolean): void {
@@ -418,7 +418,7 @@ export class QuickOutline {
   }
 
   private _updateItems(): void {
-    if (this._disposed) throw new Error("Cannot update items, disposed");
+    //if (this._disposed) throw new Error("Cannot update items, disposed");
     const items = this._extractExpandedItems(this._rootItems);
     if (1 || !GlobalState.Get.getSearchStr(this._searchMethod)) {
       this._quickPick.items = items;

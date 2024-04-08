@@ -85,7 +85,7 @@ function symbolKindsForCommandString(commandString: string): Set<SymbolKind> {
 
   return out;
 }
-nex
+
 export function parseSearchCommand(inputStr: string): ISearch | null {
   const regex = /(#\S+)\s+(.+)/;
   const groups = inputStr.match(regex);

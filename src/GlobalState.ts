@@ -3,7 +3,7 @@ export class GlobalState {
   private constructor() { }
 
   private _lastSearchBySymbol: string = "";
-  private _lastSearchByText: string = "";
+  private _lastSearchByText: string = "#"; // Hide outline by default
 
   setSearchStr(searchStr: string, method: "symbol" | "text"): void {
     switch (method) {
