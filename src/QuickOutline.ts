@@ -1,20 +1,18 @@
-import { window, SymbolInformation, SymbolKind, Selection, Range, Position, type QuickPickItem, QuickInputButton, QuickPickItemKind, ThemeIcon, Uri, commands } from "vscode";
-import { selectionStyle } from "./extension";
+import { window, SymbolInformation, SymbolKind, Selection, Range, Position, commands } from "vscode";
 
 
-import { close } from "fs";
-import { IMatchedRange, IParsedSearchString, parseSearchCommand, parseSearchString, searchDocument, searchLine } from "./search";
+import { IMatchedRange, IParsedSearchString, parseSearchCommand, searchDocument, searchLine } from "./search";
 import { GlobalState } from "./GlobalState";
 import { QuickLineItem } from "./QuickLineItem";
 import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 import { forEachParent } from "./utils";
-import { ISearch, ISimpleSearch, IFilter, IFilterSearch } from "./ISearch";
-import { timeStamp } from "console";
+import { ISimpleSearch, IFilter, IFilterSearch } from "./ISearch";
 
-const ignoredTypesIfEmpty = [
-  SymbolKind.Module,
-  SymbolKind.Object
-];
+export const selectionStyle = window.createTextEditorDecorationType({
+  border: "solid",
+  borderWidth: "medium",
+  borderColor: "red"
+});
 
 export type QuickOutlineItem = QuickLineItem | QuickSymbolOutlineItem;
 export class QuickOutline {
@@ -26,14 +24,17 @@ export class QuickOutline {
     // Initialize items
     const items = symbols
       .map(symbol => QuickSymbolOutlineItem.tryCreate(symbol, this._searchMethod))
-      .filter(item => item != null) as QuickSymbolOutlineItem[];
+      .filter(item => item !== null) as QuickSymbolOutlineItem[];
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
 
+    this._quickPick.value = GlobalState.Get.getSearchStr(this._searchMethod);
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
     this._quickPick.keepScrollPosition = false;
-    this._quickPick.value = GlobalState.Get.getSearchStr(this._searchMethod);
+    
+    this._quickPick.onDidAccept(() => this._onDidAccept());
+    this._quickPick.onDidHide(() => this.dispose());
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items));
     this._quickPick.onDidChangeValue((value) => {
       try {
@@ -51,11 +52,6 @@ export class QuickOutline {
       } catch (e) {
         console.log(e);
       }
-    });
-    this._quickPick.onDidAccept(() => this._onDidAccept());
-    this._quickPick.onDidHide(() => {
-      this.dispose();
-      this.onHide();
     });
 
     // Set the outliner to a symbol that is closest the current cursor's lined
@@ -85,8 +81,6 @@ export class QuickOutline {
     this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
   }
-
-  onHide = () => { };
 
   private _disposed = false;
   private _quickPick = window.createQuickPick<QuickOutlineItem>();
@@ -195,7 +189,7 @@ export class QuickOutline {
     // TODO: Make configurable or as a separate command?
     if (!expanded) {
       // Go up
-      if (item.parent != null) {
+      if (item.parent !== null) {
         item = item.parent;
         activeItem = item;
       }
@@ -256,7 +250,7 @@ export class QuickOutline {
 
     // Make sure the command box always has '#' when search -- this is a workaround
     // to shortcircuit the native searching that the input does
-    if (searchStr.length != 0 && searchStr[0] !== "#") {
+    if (searchStr.length !== 0 && searchStr[0] !== "#") {
       this._quickPick.value = `#${searchStr}`;
       searchStr = `#${searchStr}`;
     }
@@ -264,7 +258,7 @@ export class QuickOutline {
     GlobalState.Get.setSearchStr(searchStr, this._searchMethod);
 
     const search = parseSearchCommand(searchStr);
-    if (search == null) {
+    if (search === null) {
       if (this._searchMethod === "text") {
         this._hideAllItems();
         return;
@@ -341,7 +335,7 @@ export class QuickOutline {
       hitLines.add(result.line);
     }
 
-    if (this._searchMethod == "text") {
+    if (this._searchMethod === "text") {
       for (const match of searchResults) {
         for (const item of this._rootItems) {
           const line = this._editor.document.lineAt(match.line);
@@ -374,7 +368,6 @@ export class QuickOutline {
     }
 
     this._quickPick.activeItems = [item];
-    //this._quickPick.show();
   }
 
   private _getClosestItem(position: Position, items: readonly QuickOutlineItem[]): QuickOutlineItem | null {
@@ -420,11 +413,7 @@ export class QuickOutline {
   private _updateItems(): void {
     //if (this._disposed) throw new Error("Cannot update items, disposed");
     const items = this._extractExpandedItems(this._rootItems);
-    if (1 || !GlobalState.Get.getSearchStr(this._searchMethod)) {
-      this._quickPick.items = items;
-      return;
-    }
-
+    this._quickPick.items = items;
     // TODO: Figure out why this doesn't work..
 
     // If we are in a search, output separators to make it clearer which
@@ -478,11 +467,10 @@ export class QuickOutline {
         );
       });
 
-      for (const [start, length] of item.match.ranges) {
+      if (ranges.length) {
         this._editor.setDecorations(selectionStyle, ranges);
+        this._editor.revealRange(ranges[0]);
       }
-
-      this._editor.revealRange(ranges[0]);
     } else {
       const ranges = item.match.ranges.map(([start, length]) => {
         return new Range(
@@ -491,11 +479,10 @@ export class QuickOutline {
         );
       });
 
-      for (const [start, length] of item.match.ranges) {
+      if (ranges.length) {
         this._editor.setDecorations(selectionStyle, ranges);
+        this._editor.revealRange(ranges[0]);
       }
-
-      this._editor.revealRange(item.line.range);
     }
   }
 
