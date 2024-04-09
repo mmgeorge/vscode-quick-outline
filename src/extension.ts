@@ -31,7 +31,7 @@ export function deactivate() {
 
 function showOutline() {
   console.log("Called showOutline");
-  return createQuickOutline("symbol"); 
+  return createQuickOutline("symbol");
 }
 
 function searchTextInFile() {
@@ -59,6 +59,10 @@ async function createQuickOutline(mode: "text" | "symbol"): Promise<void> {
   }
 
   const symbols = await commands.executeCommand<SymbolInformation[]>("vscode.executeDocumentSymbolProvider", document.uri);
+  if (!symbols) {
+    // Typing for this not correct? Sometimes get nulls if tabbing at the same time?
+    return;
+  }
 
   quickOutline = new QuickOutline(symbols, mode);
 }

@@ -7,6 +7,7 @@ import { QuickLineItem } from "./QuickLineItem";
 import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
 import { forEachParent } from "./utils";
 import { ISimpleSearch, IFilter, IFilterSearch } from "./ISearch";
+import { setInQuickOutline } from "./extension";
 
 export const selectionStyle = window.createTextEditorDecorationType({
   border: "solid",
@@ -20,10 +21,11 @@ export class QuickOutline {
   constructor(
     symbols: SymbolInformation[],
     private readonly _searchMethod: "symbol" | "text") {
+    setInQuickOutline(true);
 
     // Initialize items
     const items = symbols
-      .map(symbol => QuickSymbolOutlineItem.tryCreate(symbol, this._searchMethod))
+      .map(symbol => QuickSymbolOutlineItem.tryCreate(symbol, this._searchMethod, this._editor.document))
       .filter(item => item !== null) as QuickSymbolOutlineItem[];
     items.sort((a, b) => a.lineStart - b.lineStart);
     this._rootItems = items;
@@ -44,6 +46,7 @@ export class QuickOutline {
 
     this._setActiveItemByPosition();
     this._update();
+    this._quickPick.show();
   }
 
   dispose() {
@@ -51,8 +54,8 @@ export class QuickOutline {
       return;
     }
 
+    setInQuickOutline(false);
     this._disposed = true;
-
     this._editor.setDecorations(selectionStyle, []);
     this._quickPick.dispose();
   }
@@ -154,11 +157,10 @@ export class QuickOutline {
   }
 
   private _setActiveItemByPosition(): void {
-    this._deselectAll();
-
     const initialPosition = this._editor.selection.start;
     const closestItem = this._getClosestItem(initialPosition, Array.from(this.items()));
     if (closestItem) {
+      this._deselectAll();
       closestItem.shouldSelect = true;
     }
   }
@@ -239,8 +241,6 @@ export class QuickOutline {
 
   private _search(searchStr: string): void {
     // We may restore the value for a new session
-    console.log("Performing search", searchStr);
-
     // Make sure the command box always has '#' when search -- this is a workaround
     // to shortcircuit the native searching that the input does
     if (searchStr.length !== 0 && searchStr[0] !== "#") {
@@ -317,7 +317,6 @@ export class QuickOutline {
         if (filter.filter.has(item.symbolKind)) {
           item.hidden = false;
           item.isSearchResult = true;
-          console.log("FILTER, SET ITEM AS SEARCH RESULT");
           forEachParent(item, (parent) => {
             parent.hidden = false;
             parent.expanded = true;
@@ -362,7 +361,6 @@ export class QuickOutline {
 
   private _updateActiveItem(item: QuickOutlineItem): void {
     if (!this._quickPick.items.includes(item)) {
-      console.log("ERROR: Cannot set active item that does not exist in pick list");
       throw new Error("Cannot set active item that does not exist in pick list");
     }
 
@@ -370,7 +368,6 @@ export class QuickOutline {
   }
 
   private _getClosestItem(position: Position, items: readonly QuickOutlineItem[]): QuickOutlineItem | null {
-    console.log("Call get closest item");
     let closestItem: QuickOutlineItem | null = null;
     let closestLineDist = Infinity;
 
@@ -383,7 +380,7 @@ export class QuickOutline {
 
       let line = -1;
       if (item.ty === "symbol") {
-        const nameRange = item.getNameRange(this._editor.document);
+        const nameRange = item.getNameRange();
         line = nameRange.start.line;
       } else {
         line = item.line.lineNumber;
@@ -392,7 +389,6 @@ export class QuickOutline {
       const lineDist = Math.abs(position.line - line);
 
       if (!closestItem) {
-        console.log("GET CLOSEST ITEM, INSERT BY DEFAULT");
         closestItem = item;
         closestLineDist = lineDist;
         continue;
@@ -408,20 +404,16 @@ export class QuickOutline {
   }
 
   private _update(): void {
-    console.log("Update");
     const items = this._extractExpandedItems(this._rootItems);
     this._quickPick.items = items;
 
     const selected = this._quickPick.items.find(item => item.shouldSelect);
-    if (selected && !selected.hidden) {
-      console.log("Setting selected to", selected.ty === "symbol" ? `s:${selected.lineStart}` : selected.line.lineNumber);
+    if (selected) {
       this._quickPick.activeItems = [selected];
     } else {
-      console.log("No selected item found");
-      this._quickPick.activeItems = [];
+      // this._quickPick.activeItems = [];
     }
 
-    this._quickPick.show();
   }
 
   private _onDidChangeActive(items: readonly QuickOutlineItem[]) {
@@ -445,9 +437,9 @@ export class QuickOutline {
 
     let range: Range;
     if (item.ty === "symbol") {
-      range = item.getNameRange(this._editor.document);
+      range = item.getNameRange();
     } else {
-      range = item.line.range;
+      range = item.getRanges()[0] ?? item.line.range;
     }
 
     this._editor.selection = new Selection(range.start, range.start);

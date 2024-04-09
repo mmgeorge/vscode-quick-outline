@@ -11,6 +11,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
   static tryCreate(
     symbol: SymbolInformation,
     searchMethod: "symbol" | "text",
+    document: TextDocument,
     depth = 0,
     parent: QuickSymbolOutlineItem | null = null
   ): QuickSymbolOutlineItem | null {
@@ -19,12 +20,13 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
       return null;
     }
 
-    return new QuickSymbolOutlineItem(symbol, searchMethod, depth, parent);
+    return new QuickSymbolOutlineItem(symbol, searchMethod, document, depth, parent);
   }
 
   private constructor(
     private _symbol: SymbolInformation,
     readonly searchMethod: "symbol" | "text",
+    document: TextDocument,
     private _depth = 0,
     readonly parent: QuickSymbolOutlineItem | null = null
   ) {
@@ -35,18 +37,28 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
     this.expanded = false;
     this._description = detail ?? createSymbolFallbackDescription(this._symbol, window.activeTextEditor!);
 
-
     if ("children" in _symbol) {
       const children = (_symbol.children as any as SymbolInformation[]) || [];
       // Symbols may not be returned to us sorted
       children.sort((a, b) => a.location.range.start.line - b.location.range.start.line);
 
       this._children = children
-        .map(child => QuickSymbolOutlineItem.tryCreate(child, this.searchMethod, this._depth + 1, this))
+        .map(child => QuickSymbolOutlineItem.tryCreate(child, this.searchMethod, document, this._depth + 1, this))
         .filter(item => item != null) as QuickOutlineItem[];
     }
+
+    const startOffset = document.offsetAt(this.location.range.start);
+    const tokenOffset = document.getText(this.location.range)
+      .indexOf(this.name) + startOffset;
+    const tokenPosition = document.positionAt(tokenOffset);
+    const newPosition = tokenPosition.translate({ characterDelta: 1 });
+    const tokenRange = document.getWordRangeAtPosition(newPosition);
+    const end = new Position(tokenPosition.line, tokenPosition.character + 4);
+
+    this._nameRange = tokenRange ?? new Range(tokenPosition, end);
   }
 
+  private _nameRange: Range;
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
   private _searchMatch: IMatchedRange | null = null;;
@@ -117,7 +129,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
       });
     }
 
-    return [this.getNameRange(document)];
+    return [this.getNameRange()];
   }
 
 
@@ -164,15 +176,7 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
     }
   }
 
-  getNameRange(document: TextDocument): Range {
-    const startOffset = document.offsetAt(this.location.range.start);
-    const tokenOffset = document.getText(this.location.range)
-      .indexOf(this.name) + startOffset;
-    const tokenPosition = document.positionAt(tokenOffset);
-    const newPosition = tokenPosition.translate({ characterDelta: 1 });
-    const tokenRange = document.getWordRangeAtPosition(newPosition);
-    const end = new Position(tokenPosition.line, tokenPosition.character + 4);
-
-    return tokenRange ?? new Range(tokenPosition, end);
+  getNameRange(): Range {
+    return this._nameRange;
   }
 }

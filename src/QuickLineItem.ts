@@ -28,7 +28,6 @@ export class QuickLineItem implements QuickPickItem {
 
   // Indicates whether or not the item should be marked as active on the next update
   shouldSelect: boolean = false;
-
   hidden = false;
   expanded = false;
 
@@ -54,7 +53,7 @@ export class QuickLineItem implements QuickPickItem {
     return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
-  getRanges(_document: TextDocument): Range[] {
+  getRanges(): Range[] {
     return this._match.ranges.map(([start, length]) => {
       return new Range(
         new Position(this.line.lineNumber, start),
