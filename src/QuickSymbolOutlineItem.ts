@@ -50,15 +50,18 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
   private readonly _description: string;
   private _children: QuickOutlineItem[] = [];
   private _searchMatch: IMatchedRange | null = null;;
+  readonly alwaysShow = true;
+
+  reset(): void {
+    this.isSearchResult = false;
+    this._searchMatch = null;
+    this.shouldSelect = false;
+  }
+
   isSearchResult = false;
 
-  get match(): IMatchedRange {
-    if (!this.isSearchResult || !this._searchMatch) {
-      throw new Error("Cannot get match for symbol that is not a search result");
-    }
-
-    return this._searchMatch;
-  }
+  // Indicates whether or not the item should be marked as active on the next update
+  shouldSelect: boolean = false;
 
   readonly ty = "symbol";
   expanded: boolean;
@@ -102,6 +105,19 @@ export class QuickSymbolOutlineItem implements QuickPickItem {
 
   get name(): string {
     return this._symbol.name;
+  }
+
+  getRanges(document: TextDocument): Range[] {
+    if (this._searchMatch != null) {
+      return this._searchMatch.ranges.map(([start, length]) => {
+        return new Range(
+          new Position(this.lineStart, start),
+          new Position(this.lineStart, start + length),
+        );
+      });
+    }
+
+    return [this.getNameRange(document)];
   }
 
 

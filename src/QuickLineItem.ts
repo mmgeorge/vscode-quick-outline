@@ -1,17 +1,16 @@
-import { type QuickPickItem, TextLine, SymbolKind } from "vscode";
+import { type QuickPickItem, TextLine, SymbolKind, Position, Range, TextDocument } from "vscode";
 import { pad } from "./utils";
 import { IMatchedRange } from "./search";
 import { GlobalState } from "./GlobalState";
 import { QuickOutlineItem } from "./QuickOutline";
 import { hidePadding } from "./utils";
 import { QuickSymbolOutlineItem } from "./QuickSymbolOutlineItem";
-import { stringify } from "querystring";
 
 export class QuickLineItem implements QuickPickItem {
 
   constructor(
     readonly line: TextLine,
-    readonly match: IMatchedRange,
+    private readonly _match: IMatchedRange,
     private readonly _depth: number = 0,
     readonly searchMethod: "symbol" | "text",
     readonly parent: QuickSymbolOutlineItem | null
@@ -25,8 +24,11 @@ export class QuickLineItem implements QuickPickItem {
 
   readonly ty = "line";
   readonly label: string;
+  readonly alwaysShow = true;
 
-  picked = false;
+  // Indicates whether or not the item should be marked as active on the next update
+  shouldSelect: boolean = false;
+
   hidden = false;
   expanded = false;
 
@@ -52,7 +54,20 @@ export class QuickLineItem implements QuickPickItem {
     return `${hidePadding}${GlobalState.Get.getSearchStr(this.searchMethod)}`;
   }
 
-  insertLineIfParent(match: IMatchedRange, line: TextLine, filter: Set<SymbolKind> | null): boolean {
+  getRanges(_document: TextDocument): Range[] {
+    return this._match.ranges.map(([start, length]) => {
+      return new Range(
+        new Position(this.line.lineNumber, start),
+        new Position(this.line.lineNumber, start + length),
+      );
+    });
+  }
+
+  reset(): void {
+    this.shouldSelect = false;
+  }
+
+  insertLineIfParent(_match: IMatchedRange, _line: TextLine, _filter: Set<SymbolKind> | null): boolean {
     return false;
   }
 }

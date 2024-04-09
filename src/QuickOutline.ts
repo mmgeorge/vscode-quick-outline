@@ -32,43 +32,18 @@ export class QuickOutline {
     this._quickPick.placeholder = "Jump to a symbol";
     this._quickPick.matchOnDescription = true;
     this._quickPick.keepScrollPosition = false;
-    
+
     this._quickPick.onDidAccept(() => this._onDidAccept());
     this._quickPick.onDidHide(() => this.dispose());
     this._quickPick.onDidChangeActive((items) => this._onDidChangeActive(items));
     this._quickPick.onDidChangeValue((value) => {
-      try {
-        this._search(value);
-        this._updateItems();
-
-        const initialPosition = this._editor.selection.start;
-        const closestItem = this._getClosestItem(initialPosition, this._quickPick.items);
-        if (closestItem) {
-          this._updateActiveItem(closestItem);
-        }
-
-        this._quickPick.show();
-
-      } catch (e) {
-        console.log(e);
-      }
+      this._search(value);
+      this._setActiveItemByPosition();
+      this._update();
     });
 
-    // Set the outliner to a symbol that is closest the current cursor's lined
-    const initialPosition = this._editor.selection.start;
-    const closestItem = this._getClosestItem(initialPosition, Array.from(this.items()));
-    if (closestItem) {
-      forEachParent(closestItem, (parent) => {
-        // Expand any parents along the way so we can see it
-        parent.expanded = true;
-      });
-    }
-
-    this._updateItems();
-    if (closestItem) {
-      this._updateActiveItem(closestItem);
-    }
-    this._quickPick.show();
+    this._setActiveItemByPosition();
+    this._update();
   }
 
   dispose() {
@@ -111,7 +86,7 @@ export class QuickOutline {
       }
     }
 
-    this._updateItems();
+    this._update();
   }
 
   nextSearchResult(): void {
@@ -124,14 +99,14 @@ export class QuickOutline {
     const nextSearchResult = this._quickPick.items
       .find((item, i) => i > index && item.isSearchResult);
     if (nextSearchResult) {
-      this._updateActiveItem(nextSearchResult);
+      this._quickPick.activeItems = [nextSearchResult];
       return;
     }
 
     // If at the end, Cycle back to the first search
     const prevSearchResult = this._quickPick.items.find(item => item.isSearchResult);
     if (prevSearchResult) {
-      this._updateActiveItem(prevSearchResult);
+      this._quickPick.activeItems = [prevSearchResult];
       return;
     }
 
@@ -153,14 +128,14 @@ export class QuickOutline {
     const nextSearchResult = reversed
       .find((item, i) => i > index && item.isSearchResult);
     if (nextSearchResult) {
-      this._updateActiveItem(nextSearchResult);
+      this._quickPick.activeItems = [nextSearchResult];
       return;
     }
 
     // If at the end, Cycle back to the first search
     const prevSearchResult = reversed.find(item => item.isSearchResult);
     if (prevSearchResult) {
-      this._updateActiveItem(prevSearchResult);
+      this._quickPick.activeItems = [prevSearchResult];
       return;
     }
 
@@ -175,7 +150,17 @@ export class QuickOutline {
       }
     }
 
-    this._updateItems();
+    this._update();
+  }
+
+  private _setActiveItemByPosition(): void {
+    this._deselectAll();
+
+    const initialPosition = this._editor.selection.start;
+    const closestItem = this._getClosestItem(initialPosition, Array.from(this.items()));
+    if (closestItem) {
+      closestItem.shouldSelect = true;
+    }
   }
 
   setActiveItemExpandEnabled(expanded: boolean): void {
@@ -231,8 +216,16 @@ export class QuickOutline {
       }
     }
 
-    this._updateItems();
-    this._updateActiveItem(activeItem);
+    this._deselectAll();
+    activeItem.shouldSelect = true;
+
+    this._update();
+  }
+
+  private _deselectAll(): void {
+    for (const item of this.items()) {
+      item.shouldSelect = false;
+    }
   }
 
   private _hideAllItems(): void {
@@ -256,6 +249,11 @@ export class QuickOutline {
     }
 
     GlobalState.Get.setSearchStr(searchStr, this._searchMethod);
+
+    // Reset whether we marked the symbol as a search result
+    for (const symbol of this.symbolItems()) {
+      symbol.isSearchResult = false;
+    }
 
     const search = parseSearchCommand(searchStr);
     if (search === null) {
@@ -319,6 +317,7 @@ export class QuickOutline {
         if (filter.filter.has(item.symbolKind)) {
           item.hidden = false;
           item.isSearchResult = true;
+          console.log("FILTER, SET ITEM AS SEARCH RESULT");
           forEachParent(item, (parent) => {
             parent.hidden = false;
             parent.expanded = true;
@@ -371,6 +370,7 @@ export class QuickOutline {
   }
 
   private _getClosestItem(position: Position, items: readonly QuickOutlineItem[]): QuickOutlineItem | null {
+    console.log("Call get closest item");
     let closestItem: QuickOutlineItem | null = null;
     let closestLineDist = Infinity;
 
@@ -378,10 +378,6 @@ export class QuickOutline {
 
     for (const item of items) {
       if (hasSelection && !item.isSearchResult) {
-        continue;
-      }
-
-      if (item.hidden) {
         continue;
       }
 
@@ -396,6 +392,7 @@ export class QuickOutline {
       const lineDist = Math.abs(position.line - line);
 
       if (!closestItem) {
+        console.log("GET CLOSEST ITEM, INSERT BY DEFAULT");
         closestItem = item;
         closestLineDist = lineDist;
         continue;
@@ -410,41 +407,21 @@ export class QuickOutline {
     return closestItem;
   }
 
-  private _updateItems(): void {
-    //if (this._disposed) throw new Error("Cannot update items, disposed");
+  private _update(): void {
+    console.log("Update");
     const items = this._extractExpandedItems(this._rootItems);
     this._quickPick.items = items;
-    // TODO: Figure out why this doesn't work..
 
-    // If we are in a search, output separators to make it clearer which
-    // items are directly related to the search vs. just the outline
-    // const itemsWithSeperators = [];
-    // let inSearch = false;
+    const selected = this._quickPick.items.find(item => item.shouldSelect);
+    if (selected && !selected.hidden) {
+      console.log("Setting selected to", selected.ty === "symbol" ? `s:${selected.lineStart}` : selected.line.lineNumber);
+      this._quickPick.activeItems = [selected];
+    } else {
+      console.log("No selected item found");
+      this._quickPick.activeItems = [];
+    }
 
-    // for (const item of items) {
-    //   if (item.isSearchResult != inSearch) {
-    //     // Each time we enter a new search, emit a separate
-    //     if (!inSearch) {
-    //       const seperator: QuickPickItem = {
-    //         label: "Results",
-    //         kind: QuickPickItemKind.Separator,
-    //       };
-    //       itemsWithSeperators.push(seperator as any);
-    //     } else {
-    //       const seperator: QuickPickItem = {
-    //         label: "Outline",
-    //         kind: QuickPickItemKind.Separator,
-    //       };
-    //       itemsWithSeperators.push(seperator as any);
-    //     }
-
-    //     inSearch = item.isSearchResult;
-    //   }
-
-    //   itemsWithSeperators.push(item);
-    // }
-
-    // this._quickPick.items = itemsWithSeperators;
+    this._quickPick.show();
   }
 
   private _onDidChangeActive(items: readonly QuickOutlineItem[]) {
@@ -453,36 +430,10 @@ export class QuickOutline {
     }
 
     const item = items[0];
-
-    if (item.ty === "symbol" && !item.isSearchResult) {
-      const nameRange = item.getNameRange(this._editor.document);
-
-      this._editor.revealRange(item.location.range);
-      this._editor.setDecorations(selectionStyle, [nameRange]);
-    } else if (item.ty === "symbol") {
-      const ranges = item.match.ranges.map(([start, length]) => {
-        return new Range(
-          new Position(item.lineStart, start),
-          new Position(item.lineStart, start + length),
-        );
-      });
-
-      if (ranges.length) {
-        this._editor.setDecorations(selectionStyle, ranges);
-        this._editor.revealRange(ranges[0]);
-      }
-    } else {
-      const ranges = item.match.ranges.map(([start, length]) => {
-        return new Range(
-          new Position(item.line.lineNumber, start),
-          new Position(item.line.lineNumber, start + length),
-        );
-      });
-
-      if (ranges.length) {
-        this._editor.setDecorations(selectionStyle, ranges);
-        this._editor.revealRange(ranges[0]);
-      }
+    const ranges = item.getRanges(this._editor.document);
+    if (ranges.length) {
+      this._editor.setDecorations(selectionStyle, ranges);
+      this._editor.revealRange(ranges[0]);
     }
   }
 
