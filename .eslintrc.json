@@ -24,8 +24,18 @@
     "eqeqeq": "warn",
     "no-throw-literal": "warn",
     "semi": "off",
-    "no-unused-vars": "warn",
-    "no-unused-expressions": "warn"
+    "no-unused-expressions": "warn",
+    "no-unused-vars": [
+      "warn",
+      {
+        "vars": "all",
+        "args": "after-used",
+        "argsIgnorePattern": "^_",
+        "caughtErrors": "all",
+        "ignoreRestSiblings": false,
+        "reportUsedIgnorePattern": false
+      }
+    ]
   },
   "ignorePatterns": [
     "out",
